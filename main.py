@@ -6,9 +6,9 @@ import openai
 import random
 
 #OpenAIのapiキー
-openai.api_key = 'OpenAIのAPIキー'
+openai.api_key =  os.getenv('OPENAI_API_KEY', 'OpenAIのAPIキー')
 # Slack APIトークン
-SLACK_API_TOKEN = 'SlackbotのBot User OAuth Token'
+SLACK_API_TOKEN = os.getenv('SLACK_API_TOKEN', 'SlackbotのAPIToken')
 # Slackに投稿するチャンネル名を指定する
 SLACK_CHANNEL = "#general"
 
