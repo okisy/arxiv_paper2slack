@@ -22,7 +22,7 @@ def get_summary(result):
 
     text = f"title: {result.title}\nbody: {result.summary}"
     response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
+                model="gpt-5-mini",
                 messages=[
                     {'role': 'system', 'content': system},
                     {'role': 'user', 'content': text}
