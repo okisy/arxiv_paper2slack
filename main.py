@@ -2,11 +2,12 @@ import os
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import arxiv
-import openai
+from openai import OpenAI
+
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', 'OpenAIのAPIキー'))
 import random
 
 #OpenAIのapiキー
-openai.api_key =  os.getenv('OPENAI_API_KEY', 'OpenAIのAPIキー')
 # Slack APIトークン
 SLACK_API_TOKEN = os.getenv('SLACK_API_TOKEN', 'SlackbotのAPIToken')
 # Slackに投稿するチャンネル名を指定する
@@ -21,21 +22,19 @@ def get_summary(result):
     ```"""
 
     text = f"title: {result.title}\nbody: {result.summary}"
-    response = openai.ChatCompletion.create(
-                model="gpt-5-mini",
-                messages=[
-                    {'role': 'system', 'content': system},
-                    {'role': 'user', 'content': text}
-                ],
-                temperature=0.25,
-            )
-    summary = response['choices'][0]['message']['content']
+    response = client.chat.completions.create(model="gpt-5-mini",
+    messages=[
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': text}
+    ],
+    temperature=0.25)
+    summary = response.choices[0].message.content
     title_en = result.title
     title, *body = summary.split('\n')
     body = '\n'.join(body)
     date_str = result.published.strftime("%Y-%m-%d %H:%M:%S")
     message = f"発行日: {date_str}\n{result.entry_id}\n{title_en}\n{title}\n{body}\n"
-    
+
     return message
 
 def main(event, context):
@@ -58,7 +57,7 @@ def main(event, context):
     #ランダムにnum_papersの数だけ選ぶ
     num_papers = 3
     results = random.sample(result_list, k=num_papers)
-    
+
     # 論文情報をSlackに投稿する
     for i,result in enumerate(results):
         try:
@@ -69,6 +68,6 @@ def main(event, context):
                 channel=SLACK_CHANNEL,
                 text=message
             )
-            print(f"Message posted: {response['ts']}")
+            print(f"Message posted: {response.ts}")
         except SlackApiError as e:
             print(f"Error posting message: {e}")
