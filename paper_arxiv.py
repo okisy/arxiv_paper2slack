@@ -27,7 +27,8 @@ def get_summary(result):
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': text}
     ],
-    temperature=0.25)
+    # temperature=0.25
+    )
     summary = response.choices[0].message.content
     title_en = result.title
     title, *body = summary.split('\n')
