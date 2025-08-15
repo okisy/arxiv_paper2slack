@@ -40,6 +40,8 @@ def get_summary(result):
 
 # Slack APIクライアントを初期化する
 slack_client = WebClient(token=SLACK_API_TOKEN)
+# # Slack APIクライアントを初期化する
+# slack_client = WebClient(token=SLACK_API_TOKEN, request_lib="requests")
 #queryを用意
 query ='ti:%22 Deep Learning %22'
 
@@ -57,17 +59,21 @@ for result in search.results():
 #ランダムにnum_papersの数だけ選ぶ
 num_papers = 3
 results = random.sample(result_list, k=num_papers)
+# print(results)
+
 
 # 論文情報をSlackに投稿する
 for i,result in enumerate(results):
     try:
         # Slackに投稿するメッセージを組み立てる
         message = "今日の論文です！ " + str(i+1) + "本目\n" + get_summary(result)
+        print(message)
         # Slackにメッセージを投稿する
         response = slack_client.chat_postMessage(
-            channel=SLACK_CHANNEL,
-            text=message
+            channel=str(SLACK_CHANNEL),
+            text=str(message)
         )
-        print(f"Message posted: {response.ts}")
+        # print(f"Message posted: {response.ts}")
+        print(f"Message posted: {response['ts']}")
     except SlackApiError as e:
         print(f"Error posting message: {e}")
