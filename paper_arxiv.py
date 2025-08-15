@@ -4,7 +4,7 @@ from slack_sdk.errors import SlackApiError
 import arxiv
 from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', 'OpenAIのAPIキー'))
+openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', 'OpenAIのAPIキー'))
 import random
 
 #OpenAIのapiキー
@@ -22,7 +22,7 @@ def get_summary(result):
     ```"""
 
     text = f"title: {result.title}\nbody: {result.summary}"
-    response = client.chat.completions.create(model="gpt-3.5-turbo",
+    response = openai_client.chat.completions.create(model="gpt-5-mini",
     messages=[
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': text}
@@ -38,7 +38,7 @@ def get_summary(result):
     return message
 
 # Slack APIクライアントを初期化する
-client = WebClient(token=SLACK_API_TOKEN)
+slack_client = WebClient(token=SLACK_API_TOKEN)
 #queryを用意
 query ='ti:%22 Deep Learning %22'
 
@@ -63,7 +63,7 @@ for i,result in enumerate(results):
         # Slackに投稿するメッセージを組み立てる
         message = "今日の論文です！ " + str(i+1) + "本目\n" + get_summary(result)
         # Slackにメッセージを投稿する
-        response = client.chat_postMessage(
+        response = slack_client.chat_postMessage(
             channel=SLACK_CHANNEL,
             text=message
         )
