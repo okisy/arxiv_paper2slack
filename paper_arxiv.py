@@ -2,13 +2,14 @@ import os
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import arxiv
-import openai
+from openai import OpenAI
+
+openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', 'OpenAIのAPIキー'))
 import random
 
 #OpenAIのapiキー
-openai.api_key = 'OpenAIのAPIキー'
 # Slack APIトークン
-SLACK_API_TOKEN = 'SlackbotのBot User OAuth Token'
+SLACK_API_TOKEN = os.getenv('SLACK_API_TOKEN', 'SlackbotのAPIToken')
 # Slackに投稿するチャンネル名を指定する
 SLACK_CHANNEL = "#general"
 
@@ -21,25 +22,26 @@ def get_summary(result):
     ```"""
 
     text = f"title: {result.title}\nbody: {result.summary}"
-    response = openai.ChatCompletion.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {'role': 'system', 'content': system},
-                    {'role': 'user', 'content': text}
-                ],
-                temperature=0.25,
-            )
-    summary = response['choices'][0]['message']['content']
+    response = openai_client.chat.completions.create(model="gpt-5-mini",
+    messages=[
+        {'role': 'system', 'content': system},
+        {'role': 'user', 'content': text}
+    ],
+    # temperature=0.25
+    )
+    summary = response.choices[0].message.content
     title_en = result.title
     title, *body = summary.split('\n')
     body = '\n'.join(body)
     date_str = result.published.strftime("%Y-%m-%d %H:%M:%S")
     message = f"発行日: {date_str}\n{result.entry_id}\n{title_en}\n{title}\n{body}\n"
-    
+
     return message
 
 # Slack APIクライアントを初期化する
-client = WebClient(token=SLACK_API_TOKEN)
+slack_client = WebClient(token=SLACK_API_TOKEN)
+# # Slack APIクライアントを初期化する
+# slack_client = WebClient(token=SLACK_API_TOKEN, request_lib="requests")
 #queryを用意
 query ='ti:%22 Deep Learning %22'
 
@@ -57,17 +59,21 @@ for result in search.results():
 #ランダムにnum_papersの数だけ選ぶ
 num_papers = 3
 results = random.sample(result_list, k=num_papers)
+# print(results)
+
 
 # 論文情報をSlackに投稿する
 for i,result in enumerate(results):
     try:
         # Slackに投稿するメッセージを組み立てる
         message = "今日の論文です！ " + str(i+1) + "本目\n" + get_summary(result)
+        print(message)
         # Slackにメッセージを投稿する
-        response = client.chat_postMessage(
-            channel=SLACK_CHANNEL,
-            text=message
+        response = slack_client.chat_postMessage(
+            channel=str(SLACK_CHANNEL),
+            text=str(message)
         )
+        # print(f"Message posted: {response.ts}")
         print(f"Message posted: {response['ts']}")
     except SlackApiError as e:
         print(f"Error posting message: {e}")
