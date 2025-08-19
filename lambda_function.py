@@ -15,20 +15,21 @@ SLACK_API_TOKEN = os.getenv('SLACK_API_TOKEN', 'SlackbotのAPIToken')
 SLACK_CHANNEL = "#general"
 
 def get_summary(result):
-    system = """与えられた論文の要点を3点のみでまとめ、以下のフォーマットで日本語で出力してください。```
+    system = """与えられた論文の要点を3点のみでまとめ、以下のフォーマットで日本語で出力してください。
+    ```
     タイトルの日本語訳
     ・要点1
     ・要点2
     ・要点3
-    ```"""
+    ```
+    """
 
     text = f"title: {result.title}\nbody: {result.summary}"
     response = openai_client.chat.completions.create(model="gpt-5-mini",
     messages=[
         {'role': 'system', 'content': system},
         {'role': 'user', 'content': text}
-    ],
-    # temperature=0.25
+    ],    
     )
     summary = response.choices[0].message.content
     title_en = result.title
