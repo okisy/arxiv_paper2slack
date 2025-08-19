@@ -1,0 +1,11 @@
+# .dockerignore
+node_modules
+cdk.out
+.git
+.gitignore
+.npm
+dist
+build
+npm-debug.log
+.DS_Store
+*.swp
