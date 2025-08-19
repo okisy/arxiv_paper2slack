@@ -4,14 +4,39 @@ import random
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import arxiv
+import openai
 from openai import OpenAI
 import argparse
 
 
-#OpenAIのapiキー
-openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', 'OpenAIのAPIキー'))
-# Slack APIトークン
-SLACK_API_TOKEN = os.getenv('SLACK_API_TOKEN', 'SlackbotのAPIToken')
+# #OpenAIのapiキー
+# openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', 'OpenAIのAPIキー'))
+# # Slack APIトークン
+# SLACK_API_TOKEN = os.getenv('SLACK_API_TOKEN', 'SlackbotのAPIToken')
+
+# config.py から設定をインポート
+import config
+
+# OpenAIのAPIキーとSlackのトークンを環境変数から取得
+openai.api_key = os.environ.get("OPENAI_API_KEY")
+slack_token = os.environ.get("SLACK_API_TOKEN")
+
+# Slackクライアントの初期化
+if not slack_token: # トークンが設定されていない場合はエラーを出す
+    raise ValueError("SLACK_API_TOKEN is not set in environment variables.")
+slack_client = WebClient(token=slack_token)
+
+# OpenAIクライアントの初期化
+if not openai.api_key:  # APIキーが設定されていない場合はエラーを出す
+    raise ValueError("OPENAI_API_KEY is not set in environment variables.")
+openai_client = OpenAI()
+
+# その他の設定は config.py から利用
+SLACK_CHANNEL = config.SLACK_CHANNEL
+ARXIV_QUERY = config.ARXIV_QUERY
+MAX_RESULTS = config.MAX_RESULTS
+NUM_PAPERS = config.NUM_PAPERS
+
 
 def get_summary(result):
     system = """与えられた論文の要点を3点のみでまとめ、以下のフォーマットで日本語で出力してください。
@@ -40,11 +65,7 @@ def get_summary(result):
     return message
 
 
-def main(slack_channel, query, max_results, num_papers):
-    # Slack APIクライアントを初期化する
-    slack_client = WebClient(token=SLACK_API_TOKEN)
-    #queryを用意    
-
+def main(slack_channel, query, max_results, num_papers):        
     # arxiv APIで最新の論文情報を取得する
     search = arxiv.Search(
         query=query,  # 検索クエリ        
@@ -77,13 +98,8 @@ def main(slack_channel, query, max_results, num_papers):
 def lambda_handler(event, context):
     """
     AWS Lambdaのハンドラー関数
-    """    
-    slack_channel = event.get('slack_channel', '#general')
-    query = event.get('query', 'ti:"Deep Learning"')
-    max_results = event.get('max_results', 100)
-    num_papers = event.get('num_papers', 3)
-    
-    main(slack_channel, query, max_results, num_papers)
+    """        
+    main(SLACK_CHANNEL, ARXIV_QUERY, MAX_RESULTS, NUM_PAPERS)
     return {
         'statusCode': 200,
         'body': json.dumps('Slackへの投稿が完了しました。')
