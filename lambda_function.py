@@ -8,12 +8,6 @@ import openai
 from openai import OpenAI
 import argparse
 
-
-# #OpenAIのapiキー
-# openai_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY', 'OpenAIのAPIキー'))
-# # Slack APIトークン
-# SLACK_API_TOKEN = os.getenv('SLACK_API_TOKEN', 'SlackbotのAPIToken')
-
 # config.py から設定をインポート
 import config
 
