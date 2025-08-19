@@ -27,7 +27,7 @@ $ python lambda_function.py
 
 ### 1. GitHub Actionsでの自動プッシュ
 
-プロジェクトのルートにある`.github/workflows`ディレクトリ内に設定したGitHub Actionsのワークフローにより、`main`ブランチへのプッシュをトリガーに以下のプロセスが自動で実行されます。
+プロジェクトのルートにある`.github/workflows/ci-cd.yml`で設定したGitHub Actionsのワークフローにより、`main`ブランチへのプッシュをトリガーに以下のプロセスが自動で実行されます。
 
 1.  **Dockerイメージのビルド**: Lambdaの実行環境に合わせて、`linux/amd64`アーキテクチャでDockerイメージがビルドされます。
 2.  **ECRへのログイン**: AWSの認証情報を使ってECRにログインします。
