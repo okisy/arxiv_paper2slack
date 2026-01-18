@@ -253,8 +253,7 @@ def main(slack_channel, query, max_results, num_papers):
             
             # Save to sheets if successful
             if dify_data:
-                # save_to_sheets(result, dify_data)
-                pass
+                save_to_sheets(result, dify_data)
 
             # Build Slack Blocks
             blocks, fallback_text = build_slack_blocks(result, dify_data, i+1)
