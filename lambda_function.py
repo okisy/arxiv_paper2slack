@@ -108,7 +108,7 @@ def get_summary(result):
         data = resp_json["data"]["outputs"]["result"]
         
         # スプシへの保存を実行
-        save_to_sheets(result, data)
+        # save_to_sheets(result, data)
         
         # Slackに表示するメッセージを組み立てる
         # theme_id 1:Representation Learning, 3:Privacy as per user prompt logic
@@ -130,6 +130,7 @@ def get_summary(result):
 def main(slack_channel, query, max_results, num_papers):        
     # arxiv APIで最新の論文情報を取得する
     print(f"Searching arxiv for: {query}")
+    client = arxiv.Client()
     search = arxiv.Search(
         query=query,  # 検索クエリ        
         max_results=max_results,  # 取得する論文数
@@ -138,7 +139,7 @@ def main(slack_channel, query, max_results, num_papers):
     )
     #searchの結果をリストに格納
     result_list = []
-    for result in search.results():
+    for result in client.results(search):
         result_list.append(result)
     
     print(f"Found {len(result_list)} papers.")
