@@ -124,6 +124,11 @@ def get_summary(result):
         return msg
     except Exception as e:
         print(f"Error in get_summary: {e}")
+        try:
+            if 'response' in locals():
+                print(f"Dify Error Response: {response.text}")
+        except:
+            pass
         return f"Error getting summary.\nTitle: {result.title}\nURL: {result.entry_id}"
 
 
