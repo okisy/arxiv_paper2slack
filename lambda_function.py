@@ -97,26 +97,37 @@ def get_dify_result(result):
         "user": "lambda-orchestrator"
     }
     
-    try:
-        response = requests.post(url, headers=headers, json=payload)
-        response.raise_for_status()
-        
-        resp_json = response.json()
-        if "data" not in resp_json or "outputs" not in resp_json["data"]:
-             print(f"Error: Unexpected Dify response format.\n{json.dumps(resp_json)}")
-             return None
-             
-        data = resp_json["data"]["outputs"]["result"]
-        return data
+    max_retries = 3
+    retry_delay = 2
 
-    except Exception as e:
-        print(f"Error in get_dify_result: {e}")
+    for attempt in range(max_retries):
         try:
-            if 'response' in locals():
-                print(f"Dify Error Response: {response.text}")
-        except:
-            pass
-        return None
+            response = requests.post(url, headers=headers, json=payload, timeout=30)
+            response.raise_for_status()
+            
+            resp_json = response.json()
+            if "data" not in resp_json or "outputs" not in resp_json["data"]:
+                 print(f"Error: Unexpected Dify response format.\n{json.dumps(resp_json)}")
+                 return None
+                 
+            data = resp_json["data"]["outputs"]["result"]
+            return data
+
+        except Exception as e:
+            print(f"Attempt {attempt+1}/{max_retries} failed in get_dify_result: {e}")
+            try:
+                if 'response' in locals():
+                    print(f"Dify Error Response: {response.text}")
+            except:
+                pass
+            
+            if attempt < max_retries - 1:
+                sleep_time = retry_delay * (2 ** attempt) # Exponential backoff: 2s, 4s, 8s
+                print(f"Retrying in {sleep_time} seconds...")
+                time.sleep(sleep_time)
+            else:
+                print("Max retries reached. Giving up on this paper.")
+                return None
 
 def build_slack_blocks(paper, dify_data, index):
     """Slack Block Kitを構築する"""
