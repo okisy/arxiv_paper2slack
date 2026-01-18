@@ -3,6 +3,7 @@ import os
 import random
 import requests
 import argparse
+import time
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import arxiv
@@ -22,14 +23,6 @@ GOOGLE_CREDS = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
 slack_token = os.environ.get("SLACK_API_TOKEN")
 
 # Slackクライアントの初期化
-if not slack_token: # トークンが設定されていない場合はエラーを出す
-    # raise ValueError("SLACK_API_TOKEN is not set in environment variables.")
-    # Local execution might not have it, but lambda will. 
-    # Warning instead of crash if running locally without it, but original code raised error.
-    # I'll keep the raise to be safe or maybe just print warning if in main?
-    # Original raised ValueError.
-    pass 
-
 if slack_token:
     slack_client = WebClient(token=slack_token)
 else:
@@ -74,23 +67,31 @@ def save_to_sheets(paper_data, dify_data):
         print(f"Error saving to sheets: {e}")
 
 
-def get_summary(result):
+def get_dify_result(result):
     """
     Dify Workflow APIを使用して構造化データを取得する
+    Returns: dict with data, or None on error
     """
     if not DIFY_API_KEY:
-        return f"Error: DIFY_API_KEY not set.\nTitle: {result.title}\nURL: {result.entry_id}"
+        print("Error: DIFY_API_KEY not set.")
+        return None
 
     url = "https://api.dify.ai/v1/workflows/run"
     headers = {
         "Authorization": f"Bearer {DIFY_API_KEY}",
         "Content-Type": "application/json"
     }
-    # Dify側で定義した入力変数名に合わせる
+    
+    # Truncate inputs to avoid errors (Title < 256, Abstract < 2000)
+    # Even if Dify side is higher, being safe here is good practice.
+    # Dify's "title" limit was the issue before.
+    title_input = result.title[:250] 
+    abstract_input = result.summary[:2000]
+
     payload = {
         "inputs": {
-            "title": result.title,
-            "abstract": result.summary
+            "title": title_input,
+            "abstract": abstract_input
         },
         "response_mode": "blocking",
         "user": "lambda-orchestrator"
@@ -100,36 +101,114 @@ def get_summary(result):
         response = requests.post(url, headers=headers, json=payload)
         response.raise_for_status()
         
-        # Difyの「終了」ノードで設定した変数名（例: result）で取得
         resp_json = response.json()
         if "data" not in resp_json or "outputs" not in resp_json["data"]:
-             return f"Error: Unexpected Dify response format.\n{json.dumps(resp_json)}"
+             print(f"Error: Unexpected Dify response format.\n{json.dumps(resp_json)}")
+             return None
              
         data = resp_json["data"]["outputs"]["result"]
-        
-        # スプシへの保存を実行
-        # save_to_sheets(result, data)
-        
-        # Slackに表示するメッセージを組み立てる
-        # theme_id 1:Representation Learning, 3:Privacy as per user prompt logic
-        theme_id = data.get('theme_id')
-        theme_label = "表現学習" if theme_id == 1 else "プライバシー" if theme_id == 3 else "その他"
-        
-        msg = f"【重要度: {data.get('importance', '?')} / カテゴリ: {theme_label}】\n"
-        msg += f"タイトル: {result.title}\n"
-        msg += f"要約: {data.get('summary', 'No summary')}\n"
-        msg += f"URL: {result.entry_id}\n"
-        msg += f"理由: {data.get('reason', 'No reason')}"
-        
-        return msg
+        return data
+
     except Exception as e:
-        print(f"Error in get_summary: {e}")
+        print(f"Error in get_dify_result: {e}")
         try:
             if 'response' in locals():
                 print(f"Dify Error Response: {response.text}")
         except:
             pass
-        return f"Error getting summary.\nTitle: {result.title}\nURL: {result.entry_id}"
+        return None
+
+def build_slack_blocks(paper, dify_data, index):
+    """Slack Block Kitを構築する"""
+    
+    if dify_data:
+        theme_id = dify_data.get('theme_id')
+        theme_label = "表現学習" if theme_id == 1 else "プライバシー" if theme_id == 3 else "その他"
+        importance = dify_data.get('importance', '?')
+        summary = dify_data.get('summary', 'No summary')
+        reason = dify_data.get('reason', 'No reason')
+        
+        # Determine emoji based on importance
+        try:
+            imp_val = int(importance)
+            star = "⭐️" * imp_val
+        except:
+            star = str(importance)
+
+        blocks = [
+            {
+                "type": "header",
+                "text": {
+                    "type": "plain_text",
+                    "text": f"📄 {index}本目: {paper.title}",
+                    "emoji": True
+                }
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*カテゴリ:*\n{theme_label}"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*重要度:*\n{star}"
+                    },
+                    {
+                        "type": "mrkdwn",
+                        "text": f"*発行日:*\n{paper.published.strftime('%Y-%m-%d')}"
+                    }
+                ]
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*要約:*\n{summary}"
+                }
+            },
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"*理由:*\n{reason}"
+                }
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {
+                            "type": "plain_text",
+                            "text": "Read Paper",
+                            "emoji": True
+                        },
+                        "url": paper.entry_id
+                    }
+                ]
+            },
+            {
+                "type": "divider"
+            }
+        ]
+        return blocks, f"New Paper: {paper.title}" # Fallback text
+    else:
+        # Fallback for errors
+        blocks = [
+            {
+                "type": "section",
+                "text": {
+                    "type": "mrkdwn",
+                    "text": f"⚠️ *Error getting details for paper {index}*\nTitle: {paper.title}\nURL: {paper.entry_id}"
+                }
+            },
+            {
+                "type": "divider"
+            }
+        ]
+        return blocks, f"Error processing paper: {paper.title}"
 
 
 def main(slack_channel, query, max_results, num_papers):        
@@ -158,20 +237,32 @@ def main(slack_channel, query, max_results, num_papers):
     # 論文情報をSlackに投稿する
     for i, result in enumerate(results):
         try:
-            # Slackに投稿するメッセージを組み立てる
-            summary_msg = get_summary(result)
-            message = "今日の論文です！ " + str(i+1) + "本目\n" + summary_msg
-            print(message)
+            print(f"Processing paper {i+1}: {result.title}...")
+            
+            # Difyからデータを取得
+            dify_data = get_dify_result(result)
+            
+            # Save to sheets if successful
+            if dify_data:
+                # save_to_sheets(result, dify_data)
+                pass
+
+            # Build Slack Blocks
+            blocks, fallback_text = build_slack_blocks(result, dify_data, i+1)
             
             if slack_client:
                 # Slackにメッセージを投稿する            
                 response = slack_client.chat_postMessage(                
                     channel=slack_channel,
-                    text=message
+                    text=fallback_text,
+                    blocks=blocks
                 )
                 print(f"Message posted: {response['ts']}")
             else:
                 print("Slack client not initialized, skipping post.")
+            
+            # Rate limit avoidance (sleep 2 seconds between requests)
+            time.sleep(2)
 
         except SlackApiError as e:
             print(f"Error posting message: {e}")
