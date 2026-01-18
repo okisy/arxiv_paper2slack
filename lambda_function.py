@@ -149,7 +149,7 @@ def build_slack_blocks(paper, dify_data, index):
                 "type": "header",
                 "text": {
                     "type": "plain_text",
-                    "text": f"📄 {index}本目: {paper.title}",
+                    "text": f"📄 {index}本目: {paper.title[:140]}",
                     "emoji": True
                 }
             },
