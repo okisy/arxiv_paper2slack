@@ -2,3 +2,6 @@ slack_sdk
 arxiv==2.2.0
 openai
 feedparser>=6.0.0
+requests
+google-api-python-client
+google-auth
