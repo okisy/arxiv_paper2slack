@@ -35,7 +35,7 @@ MAX_RESULTS = config.MAX_RESULTS
 NUM_PAPERS = config.NUM_PAPERS
 
 
-def save_to_sheets(paper_data, dify_data, insert_index=0):
+def save_to_sheets(paper_data, dify_data, slack_ts, insert_index=0):
     """Google Sheetsにデータを蓄積 (新しいデータを上に挿入)"""
     if not GOOGLE_CREDS or not SPREADSHEET_ID:
         print("GOOGLE_CREDS or SPREADSHEET_ID not set. Skipping sheet save.")
@@ -52,7 +52,8 @@ def save_to_sheets(paper_data, dify_data, insert_index=0):
             dify_data.get('theme_id', ''),
             dify_data.get('importance', ''),
             dify_data.get('summary', ''),
-            paper_data.entry_id
+            paper_data.entry_id,
+            slack_ts # Column G: Slack Message Timestamp
         ]
         
         # Calculate row index (0-based) for insertion. 
@@ -280,13 +281,10 @@ def main(slack_channel, query, max_results, num_papers):
             # Difyからデータを取得
             dify_data = get_dify_result(result)
             
-            # Save to sheets if successful
-            if dify_data:
-                save_to_sheets(result, dify_data, insert_index=i)
-
             # Build Slack Blocks
             blocks, fallback_text = build_slack_blocks(result, dify_data, i+1)
             
+            slack_ts = ""
             if slack_client:
                 # Slackにメッセージを投稿する            
                 response = slack_client.chat_postMessage(                
@@ -294,9 +292,14 @@ def main(slack_channel, query, max_results, num_papers):
                     text=fallback_text,
                     blocks=blocks
                 )
-                print(f"Message posted: {response['ts']}")
+                slack_ts = response['ts']
+                print(f"Message posted: {slack_ts}")
             else:
                 print("Slack client not initialized, skipping post.")
+
+            # Save to sheets if successful (using captured slack_ts)
+            if dify_data:
+                save_to_sheets(result, dify_data, slack_ts, insert_index=i)
             
             # Rate limit avoidance (sleep 2 seconds between requests)
             time.sleep(2)
