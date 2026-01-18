@@ -82,9 +82,9 @@ def get_dify_result(result):
         "Content-Type": "application/json"
     }
     
-    # Truncate inputs to avoid errors (Title < 512, Abstract < 1024 as per Dify settings)
+    # Truncate inputs to avoid errors (Title < 512, Abstract < 8192 as per Dify settings)
     title_input = result.title[:500] 
-    abstract_input = result.summary[:1000]
+    abstract_input = result.summary[:8000]
 
     payload = {
         "inputs": {
