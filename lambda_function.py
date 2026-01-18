@@ -82,11 +82,9 @@ def get_dify_result(result):
         "Content-Type": "application/json"
     }
     
-    # Truncate inputs to avoid errors (Title < 256, Abstract < 2000)
-    # Even if Dify side is higher, being safe here is good practice.
-    # Dify's "title" limit was the issue before.
-    title_input = result.title[:250] 
-    abstract_input = result.summary[:2000]
+    # Truncate inputs to avoid errors (Title < 512, Abstract < 1024 as per Dify settings)
+    title_input = result.title[:500] 
+    abstract_input = result.summary[:1000]
 
     payload = {
         "inputs": {
