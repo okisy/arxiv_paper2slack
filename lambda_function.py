@@ -35,8 +35,8 @@ MAX_RESULTS = config.MAX_RESULTS
 NUM_PAPERS = config.NUM_PAPERS
 
 
-def save_to_sheets(paper_data, dify_data):
-    """Google Sheetsにデータを蓄積"""
+def save_to_sheets(paper_data, dify_data, insert_index=0):
+    """Google Sheetsにデータを蓄積 (新しいデータを上に挿入)"""
     if not GOOGLE_CREDS or not SPREADSHEET_ID:
         print("GOOGLE_CREDS or SPREADSHEET_ID not set. Skipping sheet save.")
         return
@@ -46,23 +46,52 @@ def save_to_sheets(paper_data, dify_data):
         creds = service_account.Credentials.from_service_account_info(creds_info)
         service = build('sheets', 'v4', credentials=creds)
 
-        values = [[
+        values = [
             paper_data.published.strftime('%Y-%m-%d'),
             paper_data.title,
             dify_data.get('theme_id', ''),
             dify_data.get('importance', ''),
             dify_data.get('summary', ''),
             paper_data.entry_id
-        ]]
+        ]
         
-        service.spreadsheets().values().append(
+        # Calculate row index (0-based) for insertion. 
+        # Header is row 0. We want to insert at row 1 + insert_index.
+        # e.g. 1st paper (i=0) -> row 1.
+        # e.g. 2nd paper (i=1) -> row 2.
+        target_index = 1 + insert_index
+        
+        # 1. Insert a blank row
+        requests = [{
+            'insertDimension': {
+                'range': {
+                    'sheetId': 0,
+                    'dimension': 'ROWS',
+                    'startIndex': target_index,
+                    'endIndex': target_index + 1
+                },
+                'inheritFromBefore': False
+            }
+        }]
+        
+        service.spreadsheets().batchUpdate(
             spreadsheetId=SPREADSHEET_ID,
-            range="A1",
-            valueInputOption="RAW",
-            insertDataOption="INSERT_ROWS",
-            body={'values': values}
+            body={'requests': requests}
         ).execute()
-        print(f"Saved to sheets: {paper_data.title}")
+        
+        # 2. Write data to that row
+        # Range string uses 1-based indexing. row index `target_index` corresponds to row number `target_index + 1`.
+        row_number = target_index + 1  
+        range_name = f"A{row_number}"
+        
+        service.spreadsheets().values().update(
+            spreadsheetId=SPREADSHEET_ID,
+            range=range_name,
+            valueInputOption="RAW",
+            body={'values': [values]}
+        ).execute()
+        
+        print(f"Saved to sheets at row {row_number}: {paper_data.title}")
     except Exception as e:
         print(f"Error saving to sheets: {e}")
 
@@ -253,7 +282,7 @@ def main(slack_channel, query, max_results, num_papers):
             
             # Save to sheets if successful
             if dify_data:
-                save_to_sheets(result, dify_data)
+                save_to_sheets(result, dify_data, insert_index=i)
 
             # Build Slack Blocks
             blocks, fallback_text = build_slack_blocks(result, dify_data, i+1)
