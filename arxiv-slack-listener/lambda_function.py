@@ -137,8 +137,27 @@ def lambda_handler(event, context):
             ts = item.get("ts")
             
             if ts and reaction:
-                print(f"Reaction added: {reaction} to message {ts}")
-                update_reaction_in_sheets(ts, reaction)
+                # Convert Slack reaction name (e.g. "tada") to Unicode Emoji (🎉)
+                # language='alias' supports Slack/GitHub style codes
+                try:
+                    # emoji.emojize needs colons, e.g. :tada:
+                    # But custom emojis won't convert and just stay as text (which is desired fallback)
+                    reaction_emoji = emoji.emojize(f":{reaction}:", language='alias')
+                    # If conversion failed (returned same string with colons), strip colons to keep original text
+                    # Wait, emojize returns the string with colons if not found? No, it returns strictly what was passed if not found (v2 behavior might vary).
+                    # Actually, if it fails, it returns the input string ":reaction:".
+                    # Let's check if it starts and ends with colon, if so, revert to raw name?
+                    # Or just save the unicode if successful, else raw name.
+                    if reaction_emoji == f":{reaction}:":
+                         reaction_display = reaction
+                    else:
+                         reaction_display = reaction_emoji
+                except Exception as e:
+                    print(f"Emoji conversion failed: {e}")
+                    reaction_display = reaction
+
+                print(f"Reaction added: {reaction} (Display: {reaction_display}) to message {ts}")
+                update_reaction_in_sheets(ts, reaction_display)
         
     return {
         'statusCode': 200,
