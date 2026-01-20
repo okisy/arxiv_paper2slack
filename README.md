@@ -8,7 +8,7 @@ Arxiv APIを使って最新の論文を取得し、AIで要約してSlackに通�
 このプロジェクトは2つのAWS Lambda関数で構成されています。
 
 1.  **Notification Function (`arxiv-paper-notifier`)**
-    *   定期的に起動（EventBridge Schedule）。
+    *   定期的に起動（AWS EventBridge Rule: 日本時間 朝10:00）。
     *   Arxivから論文を取得 -> OpenAIで要約 -> Slackへ通知 -> スプレッドシートへ保存。
 2.  **Listener Function (`arxiv-slack-listener`)**
     *   Slackからのイベント（Event API）で起動。
@@ -58,7 +58,14 @@ Listenerを動作させるには、Slack Appの管理画面で以下の設定が
 4.  設定変更後、アプリを **Reinstall** する。
 
 ## ローカルでの実行
-[uv](https://github.com/astral-sh/uv) または `pip` を使用して依存関係をインストールします。
+
+### セットアップ
+`pip` を使用して依存関係をインストールします（標準）。
+※ [uv](https://github.com/astral-sh/uv) を使用している場合は `uv pip install` も可能です。
+
+```bash
+pip install -r requirements.txt
+```
 
 ```bash
 # Notification (Poster)
