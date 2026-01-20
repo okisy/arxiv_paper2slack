@@ -9,15 +9,17 @@ from slack_sdk.errors import SlackApiError
 import arxiv
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
+import openai
 
 # config.py から設定をインポート
 import config
 
-# 追加する環境変数
-DIFY_API_KEY = os.environ.get("DIFY_API_KEY")
+# 環境変数
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 # サービスアカウントのJSON
 GOOGLE_CREDS = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+# OpenAI Key
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 
 # Slackのトークンを環境変数から取得
 slack_token = os.environ.get("SLACK_API_TOKEN")
@@ -33,6 +35,35 @@ SLACK_CHANNEL = config.SLACK_CHANNEL
 ARXIV_QUERY = config.ARXIV_QUERY
 MAX_RESULTS = config.MAX_RESULTS
 NUM_PAPERS = config.NUM_PAPERS
+
+
+def get_existing_paper_ids():
+    """Google Sheetsから既に送信済みの論文ID(URL)を取得する"""
+    if not GOOGLE_CREDS or not SPREADSHEET_ID:
+        print("GOOGLE_CREDS or SPREADSHEET_ID not set. Skipping deduplication check.")
+        return set()
+
+    try:
+        creds_info = json.loads(GOOGLE_CREDS)
+        creds = service_account.Credentials.from_service_account_info(creds_info)
+        service = build('sheets', 'v4', credentials=creds)
+
+        # F列 (URL/Entry ID) を取得
+        range_name = "F2:F" 
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SPREADSHEET_ID, range=range_name).execute()
+        rows = result.get('values', [])
+        
+        existing_ids = set()
+        for row in rows:
+            if row:
+                existing_ids.add(row[0])
+        
+        print(f"Found {len(existing_ids)} existing papers in sheets.")
+        return existing_ids
+    except Exception as e:
+        print(f"Error fetching existing papers: {e}")
+        return set()
 
 
 def save_to_sheets(paper_data, dify_data, slack_ts, insert_index=0):
@@ -56,10 +87,6 @@ def save_to_sheets(paper_data, dify_data, slack_ts, insert_index=0):
             slack_ts # Column G: Slack Message Timestamp
         ]
         
-        # Calculate row index (0-based) for insertion. 
-        # Header is row 0. We want to insert at row 1 + insert_index.
-        # e.g. 1st paper (i=0) -> row 1.
-        # e.g. 2nd paper (i=1) -> row 2.
         target_index = 1 + insert_index
         
         # 1. Insert a blank row
@@ -81,7 +108,6 @@ def save_to_sheets(paper_data, dify_data, slack_ts, insert_index=0):
         ).execute()
         
         # 2. Write data to that row
-        # Range string uses 1-based indexing. row index `target_index` corresponds to row number `target_index + 1`.
         row_number = target_index + 1  
         range_name = f"A{row_number}"
         
@@ -97,196 +123,203 @@ def save_to_sheets(paper_data, dify_data, slack_ts, insert_index=0):
         print(f"Error saving to sheets: {e}")
 
 
-def get_dify_result(result):
+def generate_paper_summary(paper_title, paper_abstract, model="gpt-5-mini"):
     """
-    Dify Workflow APIを使用して構造化データを取得する
-    Returns: dict with data, or None on error
+    LLMを使用して論文の要約、重要度判定、カテゴリ分類を行う
+    Modular design to allow easy swapping of LLM backend.
     """
-    if not DIFY_API_KEY:
-        print("Error: DIFY_API_KEY not set.")
-        return None
+    if not OPENAI_API_KEY:
+        print("Error: OPENAI_API_KEY not set.")
+        return _fallback_result(paper_abstract, "Missing API Key")
 
-    url = "https://api.dify.ai/v1/workflows/run"
-    headers = {
-        "Authorization": f"Bearer {DIFY_API_KEY}",
-        "Content-Type": "application/json"
-    }
+    client = openai.OpenAI(api_key=OPENAI_API_KEY)
     
-    # Truncate inputs to avoid errors (Title < 512, Abstract < 8192 as per Dify settings)
-    title_input = result.title[:500] 
-    abstract_input = result.summary[:8000]
+    prompt = f"""
+    あなたは空間統計とプライバシーの専門家です。以下の論文を解析し、構造化JSONで出力してください。
+    タイトル: {paper_title}
+    抄録: {paper_abstract}
 
-    payload = {
-        "inputs": {
-            "title": title_input,
-            "abstract": abstract_input
-        },
-        "response_mode": "blocking",
-        "user": "lambda-orchestrator"
-    }
+    ## 出力項目
+    - importance: 1-5の整数（5が最高）
+    - theme_id: 1(表現学習) または 3(プライバシー保護) または 0(その他)
+    - summary: 論文の要点を実務家向けに3行で要約
+    - reason: そのスコア・テーマを付けた数理的・実務的な理由
     
-    max_retries = 3
-    retry_delay = 2
+    Output JSON format example:
+    {{
+        "summary": "要約文...",
+        "importance": 5,
+        "theme_id": 1,
+        "reason": "理由..."
+    }}
+    """
 
-    for attempt in range(max_retries):
-        try:
-            response = requests.post(url, headers=headers, json=payload, timeout=30)
-            response.raise_for_status()
-            
-            resp_json = response.json()
-            if "data" not in resp_json or "outputs" not in resp_json["data"]:
-                 print(f"Error: Unexpected Dify response format.\n{json.dumps(resp_json)}")
-                 return None
-                 
-            data = resp_json["data"]["outputs"]["result"]
-            return data
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {"role": "system", "content": "You are a helpful research assistant."},
+                {"role": "user", "content": prompt}
+            ],
+            response_format={"type": "json_object"}
+        )
+        content = response.choices[0].message.content
+        data = json.loads(content)
+        return data
 
-        except Exception as e:
-            print(f"Attempt {attempt+1}/{max_retries} failed in get_dify_result: {e}")
-            try:
-                if 'response' in locals():
-                    print(f"Dify Error Response: {response.text}")
-            except:
-                pass
-            
-            if attempt < max_retries - 1:
-                sleep_time = retry_delay * (2 ** attempt) # Exponential backoff: 2s, 4s, 8s
-                print(f"Retrying in {sleep_time} seconds...")
-                time.sleep(sleep_time)
-            else:
-                print("Max retries reached. Giving up on this paper.")
-                return None
+    except Exception as e:
+        print(f"LLM Error: {e}")
+        return _fallback_result(paper_abstract, "LLM Processing Failed")
 
-def build_slack_blocks(paper, dify_data, index):
+def _fallback_result(abstract, reason_suffix):
+    """
+    LLM失敗時のフォールバック結果を返す
+    """
+    return {
+        "summary": abstract[:500] + "..." if len(abstract) > 500 else abstract,
+        "importance": "?",
+        "theme_id": "?",
+        "reason": f"System Error: {reason_suffix}. Showing raw abstract."
+    }
+
+
+def build_slack_blocks(paper, ai_data, index):
     """Slack Block Kitを構築する"""
     
-    if dify_data:
-        theme_id = dify_data.get('theme_id')
-        theme_label = "表現学習" if theme_id == 1 else "プライバシー" if theme_id == 3 else "その他"
-        importance = dify_data.get('importance', '?')
-        summary = dify_data.get('summary', 'No summary')
-        reason = dify_data.get('reason', 'No reason')
-        
-        # Determine emoji based on importance
-        try:
-            imp_val = int(importance)
-            star = "⭐️" * imp_val
-        except:
-            star = str(importance)
-
-        blocks = [
-            {
-                "type": "header",
-                "text": {
-                    "type": "plain_text",
-                    "text": f"📄 {index}本目: {paper.title[:140]}",
-                    "emoji": True
-                }
-            },
-            {
-                "type": "section",
-                "fields": [
-                    {
-                        "type": "mrkdwn",
-                        "text": f"*カテゴリ:*\n{theme_label}"
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": f"*重要度:*\n{star}"
-                    },
-                    {
-                        "type": "mrkdwn",
-                        "text": f"*発行日:*\n{paper.published.strftime('%Y-%m-%d')}"
-                    }
-                ]
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*要約:*\n{summary}"
-                }
-            },
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"*理由:*\n{reason}"
-                }
-            },
-            {
-                "type": "actions",
-                "elements": [
-                    {
-                        "type": "button",
-                        "text": {
-                            "type": "plain_text",
-                            "text": "Read Paper",
-                            "emoji": True
-                        },
-                        "url": paper.entry_id
-                    }
-                ]
-            },
-            {
-                "type": "divider"
-            }
-        ]
-        return blocks, f"New Paper: {paper.title}" # Fallback text
+    theme_id = ai_data.get('theme_id')
+    
+    if theme_id == 1:
+        theme_label = "表現学習"
+    elif theme_id == 3:
+        theme_label = "プライバシー"
+    elif str(theme_id) == "?":
+        theme_label = "不明 (?)"
     else:
-        # Fallback for errors
-        blocks = [
-            {
-                "type": "section",
-                "text": {
-                    "type": "mrkdwn",
-                    "text": f"⚠️ *Error getting details for paper {index}*\nTitle: {paper.title}\nURL: {paper.entry_id}"
-                }
-            },
-            {
-                "type": "divider"
+        theme_label = "その他"
+
+    importance = ai_data.get('importance', '?')
+    summary = ai_data.get('summary', 'No summary')
+    reason = ai_data.get('reason', 'No reason')
+    
+    # Determine emoji based on importance
+    try:
+        imp_val = int(importance)
+        star = "⭐️" * imp_val
+    except:
+        star = str(importance)
+
+    blocks = [
+        {
+            "type": "header",
+            "text": {
+                "type": "plain_text",
+                "text": f"📄 {index}本目: {paper.title[:140]}",
+                "emoji": True
             }
-        ]
-        return blocks, f"Error processing paper: {paper.title}"
+        },
+        {
+            "type": "section",
+            "fields": [
+                {
+                    "type": "mrkdwn",
+                    "text": f"*カテゴリ:*\n{theme_label}"
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*重要度:*\n{star}"
+                },
+                {
+                    "type": "mrkdwn",
+                    "text": f"*発行日:*\n{paper.published.strftime('%Y-%m-%d')}"
+                }
+            ]
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*要約:*\n{summary}"
+            }
+        },
+        {
+            "type": "section",
+            "text": {
+                "type": "mrkdwn",
+                "text": f"*理由:*\n{reason}"
+            }
+        },
+        {
+            "type": "actions",
+            "elements": [
+                {
+                    "type": "button",
+                    "text": {
+                        "type": "plain_text",
+                        "text": "Read Paper",
+                        "emoji": True
+                    },
+                    "url": paper.entry_id
+                }
+            ]
+        },
+        {
+            "type": "divider"
+        }
+    ]
+    return blocks, f"New Paper: {paper.title}"
 
 
 def main(slack_channel, query, max_results, num_papers):        
-    # arxiv APIで最新の論文情報を取得する
+    # 0. Get existing papers for deduplication
+    existing_ids = get_existing_paper_ids()
+
+    # 1. Fetch from arXiv
     print(f"Searching arxiv for: {query}")
     client = arxiv.Client()
     search = arxiv.Search(
-        query=query,  # 検索クエリ        
-        max_results=max_results,  # 取得する論文数
-        sort_by=arxiv.SortCriterion.SubmittedDate,  # 論文を投稿された日付でソートする
-        sort_order=arxiv.SortOrder.Descending,  # 新しい論文から順に取得する
+        query=query,      
+        max_results=max_results,  
+        sort_by=arxiv.SortCriterion.SubmittedDate,  
+        sort_order=arxiv.SortOrder.Descending,  
     )
-    #searchの結果をリストに格納
-    result_list = []
+    
+    all_results = []
     for result in client.results(search):
-        result_list.append(result)
+        all_results.append(result)
     
-    print(f"Found {len(result_list)} papers.")
-    
-    #ランダムにnum_papersの数だけ選ぶ
-    if len(result_list) > num_papers:
-        results = random.sample(result_list, k=num_papers)
-    else:
-        results = result_list
+    print(f"Found {len(all_results)} papers total.")
 
-    # 論文情報をSlackに投稿する
-    for i, result in enumerate(results):
+    # 2. Filter Duplicates
+    new_papers = [p for p in all_results if p.entry_id not in existing_ids]
+    print(f"Found {len(new_papers)} new papers after deduplication.")
+
+    if not new_papers:
+        print("No new papers to send.")
+        return
+
+    # 3. Random Shuffle for selection
+    random.shuffle(new_papers)
+    
+    # 4. Process until NUM_PAPERS sent
+    papers_sent = 0
+    paper_index = 0
+    
+    # Try to process papers until we hit the target count or run out of papers
+    while papers_sent < num_papers and paper_index < len(new_papers):
+        paper = new_papers[paper_index]
+        paper_index += 1
+        
         try:
-            print(f"Processing paper {i+1}: {result.title}...")
+            print(f"Processing paper {papers_sent+1}/{num_papers} (Candidate {paper_index}): {paper.title}...")
             
-            # Difyからデータを取得
-            dify_data = get_dify_result(result)
+            # AI Inference (with fallback safety)
+            ai_data = generate_paper_summary(paper.title, paper.summary)
             
             # Build Slack Blocks
-            blocks, fallback_text = build_slack_blocks(result, dify_data, i+1)
+            blocks, fallback_text = build_slack_blocks(paper, ai_data, papers_sent+1)
             
             slack_ts = ""
             if slack_client:
-                # Slackにメッセージを投稿する            
                 response = slack_client.chat_postMessage(                
                     channel=slack_channel,
                     text=fallback_text,
@@ -295,22 +328,28 @@ def main(slack_channel, query, max_results, num_papers):
                 slack_ts = response['ts']
                 print(f"Message posted: {slack_ts}")
             else:
-                print("Slack client not initialized, skipping post.")
+                print("Slack client not initialized, skipping post (would have posted).")
+                pass
 
-            # Save to sheets if successful (using captured slack_ts)
-            if dify_data:
-                save_to_sheets(result, dify_data, slack_ts, insert_index=i)
+            # Save to sheets
+            save_to_sheets(paper, ai_data, slack_ts, insert_index=papers_sent)
             
-            # Rate limit avoidance (sleep 2 seconds between requests)
+            papers_sent += 1
+            
+            # Rate limit avoidance
             time.sleep(2)
 
         except SlackApiError as e:
             print(f"Error posting message: {e}")
+            pass
+        except Exception as e:
+            print(f"Unexpected error in loop: {e}")
+            pass
+
+    print(f"Finished. Sent {papers_sent}/{num_papers} papers.")
+
 
 def lambda_handler(event, context):
-    """
-    AWS Lambdaのハンドラー関数
-    """        
     main(SLACK_CHANNEL, ARXIV_QUERY, MAX_RESULTS, NUM_PAPERS)
     return {
         'statusCode': 200,
@@ -325,6 +364,4 @@ if __name__ == "__main__":
     parser.add_argument('--num_papers', type=int, default=NUM_PAPERS, help='Number of papers to randomly select')
     
     args = parser.parse_args()
-    
-    # Override global if args provided (though main takes args so it's fine)
     main(args.slack_channel, args.query, args.max_results, args.num_papers)
