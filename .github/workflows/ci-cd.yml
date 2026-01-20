@@ -25,20 +25,39 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, tag, and push image to Amazon ECR
+      - name: Build, tag, and push NOTIFIER image to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: arxiv-notifier # ECRリポジトリ名
-          IMAGE_TAG: ${{ github.sha }} # コミットハッシュをタグとして使用
+          ECR_REPOSITORY: arxiv-notifier
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Deploy new image to AWS Lambda
+      - name: Deploy NOTIFIER to AWS Lambda
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: arxiv-notifier
         run: |
           aws lambda update-function-code \
             --function-name paperNotification \
+            --image-uri ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Build, tag, and push LISTENER image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: arxiv-listener
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          cd arxiv-slack-listener
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Deploy LISTENER to AWS Lambda
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: arxiv-listener
+        run: |
+          aws lambda update-function-code \
+            --function-name paperReactionListener \
             --image-uri ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
