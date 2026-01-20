@@ -135,17 +135,22 @@ def generate_paper_summary(paper_title, paper_abstract, model="gpt-5-mini"):
     client = openai.OpenAI(api_key=OPENAI_API_KEY)
     
     prompt = f"""
-    Please analyze the following academic paper.
+    あなたは空間統計とプライバシーの専門家です。以下の論文を解析し、構造化JSONで出力してください。
+    タイトル: {paper_title}
+    抄録: {paper_abstract}
+
+    ## 出力項目
+    - importance: 1-5の整数（5が最高）
+    - theme_id: 1(表現学習) または 3(プライバシー保護) または 0(その他)
+    - summary: 論文の要点を実務家向けに3行で要約
+    - reason: そのスコア・テーマを付けた数理的・実務的な理由
     
-    Title: {paper_title}
-    Abstract: {paper_abstract}
-    
-    Output JSON format:
+    Output JSON format example:
     {{
-        "summary": "Japanese summary of the paper (approx 200 chars)",
-        "importance": "1-5 integer (5 being most important for network traffic/AI researchers)",
-        "theme_id": "1 for Representation Learning, 3 for Privacy, 0 for Other",
-        "reason": "Brief reason for the importance score"
+        "summary": "要約文...",
+        "importance": 5,
+        "theme_id": 1,
+        "reason": "理由..."
     }}
     """
 
