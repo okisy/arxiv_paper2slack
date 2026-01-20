@@ -6,6 +6,7 @@ import time
 from slack_sdk.signature import SignatureVerifier
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
+import emoji
 
 # Env Vars
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET")
