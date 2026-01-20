@@ -5,3 +5,4 @@ feedparser>=6.0.0
 requests
 google-api-python-client
 google-auth
+openai

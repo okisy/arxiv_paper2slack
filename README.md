@@ -8,7 +8,7 @@ Arxiv APIを使って最新の論文を取得し、**Dify Workflow** で要約�
 
 ## 主な機能
 *   **高度な検索**: Network Traffic, Geospatial AI, 6G, Smart City などの特定領域にフォーカスした論文を検索します。
-*   **AI要約 (Dify)**: 論文のタイトルと要約をDify Workflowに送信し、日本語要約・重要度判定・カテゴリ分類を行います。
+*   **AI要約 (OpenAI)**: 論文のタイトルと要約をOpenAI API (`gpt-5-mini`) に送信し、日本語要約・重要度判定・カテゴリ分類を行います。
 *   **Slack連携**: 重要度に応じたスター表示、ボタンリンクなどのリッチなメッセージを送信します。
 *   **Sheets連携**: 取得した論文をスプレッドシートにアーカイブします。重複チェックやヘッダー管理も行います。
 
@@ -21,7 +21,7 @@ AWS Lambdaの環境変数として以下を設定してください。
 |---|---|---|
 | `SLACK_API_TOKEN` | Slack Bot User OAuth Token (xoxb-...) | `xoxb-123...` |
 | `SLACK_CHANNEL` | 通知先のチャンネルIDまたは名前 | `#general` |
-| `DIFY_API_KEY` | Dify Workflow API Key | `app-...` |
+| `OPENAI_API_KEY` | OpenAI API Key | `sk-...` |
 | `SPREADSHEET_ID` | 保存先のGoogleスプレッドシートID | `1cjGSn5...` |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Google Sheets API用サービスアカウントのJSON全文 | `{"type": "service_account", ...}` |
 | `LANG` | 文字コード設定 | `C.UTF-8` |
