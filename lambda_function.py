@@ -4,6 +4,7 @@ import random
 import requests
 import argparse
 import time
+from datetime import datetime, timezone, timedelta
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 import arxiv
@@ -264,10 +265,42 @@ def build_slack_blocks(paper, ai_data, index):
         },
         {
             "type": "divider"
+        },
+        {
+            "type": "context",
+            "elements": [
+                {
+                    "type": "plain_text",
+                    "text": f"Posted at: {datetime.now(timezone(timedelta(hours=9))).strftime('%Y-%m-%d %H:%M')} (JST)",
+                    "emoji": True
+                }
+            ]
         }
     ]
     return blocks, f"New Paper: {paper.title}"
 
+
+    print(f"Finished. Sent {papers_sent}/{num_papers} papers.")
+
+    # 5. Post Gemini Prompt Bundle
+    if papers_sent > 0:
+        prompt_channel = os.environ.get("SLACK_PROMPT_CHANNEL")
+        if prompt_channel:
+            print(f"Posting Gemini prompt to {prompt_channel}")
+            
+            # Construct the prompt
+            # Format:
+            # URL
+            # URL
+            # ...
+            # これらの論文についてなにがすごいのか教えて
+            
+            urls_text = "\n".join([p.entry_id for p in new_papers[:papers_sent]]) # logic needs to track ACTUAL sent papers
+            # Wait, new_papers is shuffled. I need to track exactly which ones were sent.
+            # I should maintain a list 'sent_papers_list' inside the loop.
+            
+            # (See revised implementation below)
+            pass 
 
 def main(slack_channel, query, max_results, num_papers):        
     # 0. Get existing papers for deduplication
@@ -304,6 +337,8 @@ def main(slack_channel, query, max_results, num_papers):
     papers_sent = 0
     paper_index = 0
     
+    sent_paper_urls = []
+
     # Try to process papers until we hit the target count or run out of papers
     while papers_sent < num_papers and paper_index < len(new_papers):
         paper = new_papers[paper_index]
@@ -327,6 +362,7 @@ def main(slack_channel, query, max_results, num_papers):
                 )
                 slack_ts = response['ts']
                 print(f"Message posted: {slack_ts}")
+                sent_paper_urls.append(paper.entry_id) # Track for prompt
             else:
                 print("Slack client not initialized, skipping post (would have posted).")
                 pass
@@ -347,6 +383,23 @@ def main(slack_channel, query, max_results, num_papers):
             pass
 
     print(f"Finished. Sent {papers_sent}/{num_papers} papers.")
+
+    # 5. Post Gemini Prompt Bundle
+    prompt_channel = config.SLACK_PROMPT_CHANNEL
+    if sent_paper_urls and prompt_channel and slack_client:
+        try:
+            print(f"Posting Gemini prompt to {prompt_channel}")
+            
+            urls_block = "\n".join(sent_paper_urls)
+            prompt_text = f"{urls_block}\nこれらの論文についてなにがすごいのか教えて"
+            
+            slack_client.chat_postMessage(
+                channel=prompt_channel,
+                text=prompt_text
+            )
+            print("Gemini prompt posted.")
+        except Exception as e:
+            print(f"Failed to post Gemini prompt: {e}")
 
 
 def lambda_handler(event, context):
