@@ -5,3 +5,4 @@ ARXIV_QUERY = f'({keywords_ai}) AND ({keywords_domain})'
 MAX_RESULTS = 100
 NUM_PAPERS = 3
 SLACK_CHANNEL = "#general"
+SLACK_PROMPT_CHANNEL = "#all-arxiv-paper-notification"
