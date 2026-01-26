@@ -55,3 +55,15 @@ Triggered on `push` to `main` (Merge).
 3.  **Update Lambda**: Update Lambda functions to point to the new image URI.
 
 *Current Status*: CI/CD workflow is yet to be implemented. See [Issue #XX] for progress.
+
+### 3. Future: IaC Integration (Terraform/CDK)
+Adopting IaC (planned in `docs/IAC_ADOPTION.md`) will significantly enhance our testing capabilities:
+
+*   **Infrastructure Testing**:
+    *   **Static Analysis**: Use `tflint` or `cdk synth` to catch misconfigurations (e.g., public S3 buckets, missing env vars) before deployment.
+    *   **Policy Checks**: Enforce security compliance automatically in CI.
+*   **Ephemeral Environments**:
+    *   Create temporary, isolated Lambda stacks for each Pull Request.
+    *   Run **Smoke Tests** against these ephemeral environments to verify end-to-end deployment success without affecting Staging/Production.
+*   **Unified Pipeline**:
+    *   Deployment will shift from updating code only (`update-function-code`) to applying infrastructure state (`terraform apply`), preventing configuration drift.
