@@ -60,7 +60,7 @@ graph TD
 
 ### 1. `paperNotification` (Notifier)
 *   **トリガー**: EventBridge スケジュール (`cron(0 1 * * ? *)` - UTC 01:00 / JST 10:00)
-*   **ランタイム**: Python 3.9 (Container Image)
+*   **ランタイム**: Python 3.12 (Container Image)
 *   **役割**:
     *   クエリに基づいてArxivから新規論文を取得
     *   Google Sheetsを参照して重複を除外
@@ -71,7 +71,7 @@ graph TD
 
 ### 2. `paperReactionListener` (Listener)
 *   **トリガー**: Lambda Function URL (Public, Auth: NONE - コード内で署名検証)
-*   **ランタイム**: Python 3.9 (Container Image)
+*   **ランタイム**: Python 3.12 (Container Image)
 *   **役割**:
     *   Slack Event SubscriptionからのHTTP POSTを受信
     *   リクエスト署名 (`x-slack-signature`) を検証
