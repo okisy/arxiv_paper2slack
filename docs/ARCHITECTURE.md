@@ -1,7 +1,7 @@
 # システムアーキテクチャ
 
 > [!WARNING]
-> 本ドキュメントの記載内容は自動生成されたものであり、実装の詳細（特にLambdaの設定値や環境変数名など）が実際の現状と一部異なる可能性があります。正確な情報はAWSコンソールまたはソースコードを参照してください。
+> 本ドキュメントの記載内容は、2026-01-26時点のAWS設定(CLI)に基づいて更新されました。
 
 ## 概要
 本日開発した **Arxiv Paper to Slack** システムは、主に通知用（Notifier）とリアクション同期用（Listener）の2つのAWS Lambda関数で構成されています。
@@ -21,15 +21,15 @@ graph TD
     style Arxiv fill:#b31b1b,stroke:#333,color:white
 
     subgraph AWS Cloud
-        EventBridge[EventBridge Scheduler<br/>(毎日 10:00 JST)]
+        EventBridge["EventBridge Scheduler<br/>(毎日 10:00 JST)"]
         
         subgraph Compute
-            Notifier[Lambda: paperNotification<br/>(512MB, timeout 300s)]
-            Listener[Lambda: paperReactionListener<br/>(128MB, timeout 15s)]
+            Notifier["Lambda: paperNotification<br/>(512MB, timeout 300s)<br/>(Role: paperNotification-role-***)"]
+            Listener["Lambda: paperReactionListener<br/>(128MB, timeout 15s)<br/>(Role: paperNotification-role-***)"]
         end
         
         subgraph Storage
-            ECR[Elastic Container Registry<br/>(Docker Images)]
+            ECR["Elastic Container Registry<br/>(Docker Images)"]
         end
     end
 
@@ -49,7 +49,7 @@ graph TD
     ECR -.->|Image Pull| Notifier
 
     %% Flows - Reaction Sync
-    Slack -->|イベント: reaction_added<br/>(Function URL)| Listener
+    Slack -->|"イベント: reaction_added<br/>(Function URL)"| Listener
     Listener -->|署名検証| Slack
     Listener -->|リアクション更新| GoogleSheets
     ECR -.->|Image Pull| Listener
