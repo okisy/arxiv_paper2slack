@@ -20,20 +20,20 @@ graph TD
     style OpenAI fill:#10a37f,stroke:#333,color:white
     style Arxiv fill:#b31b1b,stroke:#333,color:white
 
-    subgraph AWS Cloud
-        EventBridge["EventBridge Scheduler<br/>(毎日 10:00 JST)"]
+    subgraph AWS_Cloud ["AWS Cloud"]
+        EventBridge["EventBridge Scheduler<br/>毎日 10:00 JST"]
         
         subgraph Compute
-            Notifier["Lambda: paperNotification<br/>(512MB, timeout 300s)<br/>(Role: paperNotification-role-***)"]
-            Listener["Lambda: paperReactionListener<br/>(128MB, timeout 15s)<br/>(Role: paperNotification-role-***)"]
+            Notifier["Lambda: paperNotification<br/>512MB, timeout 300s<br/>Role: paperNotification-role-***"]
+            Listener["Lambda: paperReactionListener<br/>128MB, timeout 15s<br/>Role: paperNotification-role-***"]
         end
         
         subgraph Storage
-            ECR["Elastic Container Registry<br/>(Docker Images)"]
+            ECR["Elastic Container Registry<br/>Docker Images"]
         end
     end
 
-    subgraph External Services
+    subgraph External_Services ["External Services"]
         Arxiv[Arxiv API]
         OpenAI[OpenAI API]
         Slack[Slack Workspace]
@@ -49,7 +49,7 @@ graph TD
     ECR -.->|Image Pull| Notifier
 
     %% Flows - Reaction Sync
-    Slack -->|"イベント: reaction_added<br/>(Function URL)"| Listener
+    Slack -->|"イベント: reaction_added<br/>Function URL"| Listener
     Listener -->|署名検証| Slack
     Listener -->|リアクション更新| GoogleSheets
     ECR -.->|Image Pull| Listener
