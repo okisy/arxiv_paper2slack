@@ -11,7 +11,8 @@ COPY requirements.txt .
 RUN pip install -r requirements.txt --target .
 
 # アプリケーションのコードをコピー
-COPY . .
+# アプリケーションのコードをコピー (srcの中身をルートに配置)
+COPY src/ .
 
 # Lambdaハンドラを設定
-CMD ["lambda_function.lambda_handler"]
+CMD ["main.lambda_handler"]

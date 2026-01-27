@@ -7,8 +7,8 @@ from unittest.mock import patch
 # Dynamically import the listener lambda to avoid name collision with root lambda_function
 import importlib.util
 
-LISTENER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "arxiv-slack-listener")
-LISTENER_PATH = os.path.join(LISTENER_DIR, "lambda_function.py")
+LISTENER_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+LISTENER_PATH = os.path.join(LISTENER_DIR, "main.py")
 
 spec = importlib.util.spec_from_file_location("listener_lambda", LISTENER_PATH)
 listener_lambda = importlib.util.module_from_spec(spec)

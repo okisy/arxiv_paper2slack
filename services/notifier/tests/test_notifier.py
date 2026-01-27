@@ -4,9 +4,9 @@ import pytest
 from unittest.mock import MagicMock, patch
 
 # Add root directory to sys.path so we can import lambda_function
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src"))
 
-from lambda_function import build_slack_blocks, generate_paper_summary, main
+from main import build_slack_blocks, generate_paper_summary, main
 
 @pytest.fixture
 def mock_env(monkeypatch):
@@ -51,8 +51,8 @@ def test_build_slack_blocks(mock_paper):
     assert blocks[4]["elements"][0]["url"] == "http://arxiv.org/abs/2601.0001"
 
 def test_generate_paper_summary_success(mock_env):
-    with patch("lambda_function.openai.OpenAI") as mock_openai, \
-         patch("lambda_function.OPENAI_API_KEY", "mock_key"):
+    with patch("main.openai.OpenAI") as mock_openai, \
+         patch("main.OPENAI_API_KEY", "mock_key"):
         mock_client = mock_openai.return_value
         mock_completion = MagicMock()
         mock_completion.choices[0].message.content = '{"summary": "Short sum", "importance": 3, "theme_id": 3, "reason": "Because"}'
@@ -65,8 +65,8 @@ def test_generate_paper_summary_success(mock_env):
 
 def test_generate_paper_summary_failure(mock_env):
     # Test when API call fails
-    with patch("lambda_function.openai.OpenAI") as mock_openai, \
-         patch("lambda_function.OPENAI_API_KEY", "mock_key"):
+    with patch("main.openai.OpenAI") as mock_openai, \
+         patch("main.OPENAI_API_KEY", "mock_key"):
         mock_client = mock_openai.return_value
         # Mock the method call to raise exception
         mock_client.chat.completions.create.side_effect = Exception("API Error")
@@ -77,12 +77,12 @@ def test_generate_paper_summary_failure(mock_env):
         assert "Abstract" in result["summary"]
         assert result["importance"] == "?"
 
-@patch("lambda_function.arxiv.Client")
-@patch("lambda_function.slack_client")
-@patch("lambda_function.generate_paper_summary")
-@patch("lambda_function.save_to_sheets")
-@patch("lambda_function.get_existing_paper_ids")
-@patch("lambda_function.config.SLACK_PROMPT_CHANNEL", "#mock-prompt-channel")
+@patch("main.arxiv.Client")
+@patch("main.slack_client")
+@patch("main.generate_paper_summary")
+@patch("main.save_to_sheets")
+@patch("main.get_existing_paper_ids")
+@patch("main.config.SLACK_PROMPT_CHANNEL", "#mock-prompt-channel")
 def test_main_flow(mock_get_existing, mock_save, mock_gen_summary, mock_slack, mock_arxiv, mock_env, mock_paper):
     # Setup
     mock_get_existing.return_value = set() # No existing papers
