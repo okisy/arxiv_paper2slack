@@ -51,7 +51,8 @@ def test_build_slack_blocks(mock_paper):
     assert blocks[4]["elements"][0]["url"] == "http://arxiv.org/abs/2601.0001"
 
 def test_generate_paper_summary_success(mock_env):
-    with patch("lambda_function.openai.OpenAI") as mock_openai:
+    with patch("lambda_function.openai.OpenAI") as mock_openai, \
+         patch("lambda_function.OPENAI_API_KEY", "mock_key"):
         mock_client = mock_openai.return_value
         mock_completion = MagicMock()
         mock_completion.choices[0].message.content = '{"summary": "Short sum", "importance": 3, "theme_id": 3, "reason": "Because"}'
@@ -64,7 +65,8 @@ def test_generate_paper_summary_success(mock_env):
 
 def test_generate_paper_summary_failure(mock_env):
     # Test when API call fails
-    with patch("lambda_function.openai.OpenAI") as mock_openai:
+    with patch("lambda_function.openai.OpenAI") as mock_openai, \
+         patch("lambda_function.OPENAI_API_KEY", "mock_key"):
         mock_client = mock_openai.return_value
         # Mock the method call to raise exception
         mock_client.chat.completions.create.side_effect = Exception("API Error")
