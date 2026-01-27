@@ -80,6 +80,26 @@ graph TD
     *   "Reactions" カラムに対応する絵文字を追記
 *   **主要な環境変数**: `SLACK_SIGNING_SECRET`, `SPREADSHEET_ID`
 
+## プロジェクト構造 (Mono-Repo)
+
+本リポジトリはMono-Repo構成を採用しており、各サービスとインフラコードが統合されています。
+
+```
+.
+├── services/
+│   ├── notifier/        # 通知用Lambda (paperNotification)
+│   │   ├── src/         # ソースコード
+│   │   ├── tests/       # ユニットテスト
+│   │   └── Dockerfile
+│   └── listener/        # リアクション同期用Lambda (paperReactionListener)
+│       ├── src/         # ソースコード
+│       ├── tests/       # ユニットテスト
+│       └── Dockerfile
+├── infra/               # インフラストラクチャ定義 (AWS CDK - TypeScript)
+├── .github/workflows/   # CI/CD パイプライン定義
+└── docs/                # ドキュメント
+```
+
 ## インフラ管理
-*   **現状**: 手動管理 (AWS Management Console)
-*   **今後**: IaC (Terraform/CDK) への移行を計画中 (参照: Issue #20)
+*   **現状**: AWSリソースは手動またはCLIで作成済み。
+*   **移行計画**: `infra/` ディレクトリにてAWS CDK (TypeScript) を用いたIaC管理へ移行予定 (参照: Issue #20)。
