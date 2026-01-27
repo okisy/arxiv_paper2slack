@@ -1,7 +1,6 @@
 import json
 import os
 import random
-import requests
 import argparse
 import time
 from datetime import datetime, timezone, timedelta
@@ -206,7 +205,7 @@ def build_slack_blocks(paper, ai_data, index):
     try:
         imp_val = int(importance)
         star = "⭐️" * imp_val
-    except:
+    except ValueError:
         star = str(importance)
 
     blocks = [
@@ -280,27 +279,7 @@ def build_slack_blocks(paper, ai_data, index):
     return blocks, f"New Paper: {paper.title}"
 
 
-    print(f"Finished. Sent {papers_sent}/{num_papers} papers.")
-
-    # 5. Post Gemini Prompt Bundle
-    if papers_sent > 0:
-        prompt_channel = os.environ.get("SLACK_PROMPT_CHANNEL")
-        if prompt_channel:
-            print(f"Posting Gemini prompt to {prompt_channel}")
-            
-            # Construct the prompt
-            # Format:
-            # URL
-            # URL
-            # ...
-            # これらの論文についてなにがすごいのか教えて
-            
-            urls_text = "\n".join([p.entry_id for p in new_papers[:papers_sent]]) # logic needs to track ACTUAL sent papers
-            # Wait, new_papers is shuffled. I need to track exactly which ones were sent.
-            # I should maintain a list 'sent_papers_list' inside the loop.
-            
-            # (See revised implementation below)
-            pass 
+ 
 
 def main(slack_channel, query, max_results, num_papers):        
     # 0. Get existing papers for deduplication

@@ -2,7 +2,7 @@ import os
 import sys
 import json
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 # Dynamically import the listener lambda to avoid name collision with root lambda_function
 import importlib.util

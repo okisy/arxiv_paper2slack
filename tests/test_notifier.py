@@ -1,13 +1,11 @@
 import os
 import sys
 import pytest
-from unittest.mock import MagicMock, patch, call
-from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 # Add root directory to sys.path so we can import lambda_function
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import lambda_function
 from lambda_function import build_slack_blocks, generate_paper_summary, main
 
 @pytest.fixture
