@@ -1,8 +1,5 @@
 import json
 import os
-import hmac
-import hashlib
-import time
 from slack_sdk.signature import SignatureVerifier
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
@@ -114,7 +111,7 @@ def lambda_handler(event, context):
     # 3. Parse JSON Body
     try:
         data = json.loads(body)
-    except:
+    except ValueError:
         return {'statusCode': 400, 'body': 'Bad JSON'}
 
     # 4. URL Verification (Slack Challenge)
