@@ -11,6 +11,9 @@ jobs:
   test_and_lint:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [notifier, listener]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -21,17 +24,19 @@ jobs:
           python-version: '3.12'
 
       - name: Install dependencies
+        working-directory: services/${{ matrix.service }}
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r arxiv-slack-listener/requirements.txt
           pip install -r requirements-test.txt
 
       - name: Lint with Ruff
+        working-directory: services/${{ matrix.service }}
         run: |
           ruff check .
 
       - name: Run Unit Tests
+        working-directory: services/${{ matrix.service }}
         run: |
           pytest tests/
 
@@ -48,8 +53,8 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }} # GitHub Secretsに登録したARN
-          aws-region: ap-northeast-1 # あなたのAWSリージョン
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ap-northeast-1
 
       - name: Login to Amazon ECR
         id: login-ecr
@@ -61,7 +66,7 @@ jobs:
           ECR_REPOSITORY: arxiv-notifier
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG services/notifier
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Deploy NOTIFIER to AWS Lambda
@@ -79,8 +84,7 @@ jobs:
           ECR_REPOSITORY: arxiv-listener
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          cd arxiv-slack-listener
-          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker build --platform linux/amd64 -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG services/listener
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Deploy LISTENER to AWS Lambda
