@@ -86,3 +86,49 @@ def test_lambda_handler_reaction_added(mock_update, mock_env):
         mock_update.assert_called_once()
         args = mock_update.call_args[0]
         assert args[0] == "1234.5678"
+
+@patch("listener_lambda.build")
+@patch("listener_lambda.service_account.Credentials.from_service_account_info")
+def test_update_reaction_in_sheets_deduplication(mock_creds, mock_build, mock_env):
+    """Test that existing reaction is NOT duplicated"""
+    mock_service = mock_build.return_value
+    mock_sheets = mock_service.spreadsheets.return_value
+    
+    # 1. Search for TS -> Found at row 1
+    # 2. Get current reactions -> "Existing"
+    mock_sheets.values.return_value.get.return_value.execute.side_effect = [
+        {'values': [['1234.5678']]}, 
+        {'values': [['Existing']]}
+    ]
+
+    # Act: Add "Existing" again
+    result = listener_lambda.update_reaction_in_sheets("1234.5678", "Existing")
+    
+    # Assert: Should return True (success) but NOT call update
+    assert result is True
+    mock_sheets.values.return_value.update.assert_not_called()
+
+@patch("listener_lambda.build")
+@patch("listener_lambda.service_account.Credentials.from_service_account_info")
+def test_update_reaction_in_sheets_append_new(mock_creds, mock_build, mock_env):
+    """Test that NEW reaction is appended"""
+    mock_service = mock_build.return_value
+    mock_sheets = mock_service.spreadsheets.return_value
+    
+    # 1. Search for TS -> Found at row 1
+    # 2. Get current reactions -> "Existing"
+    mock_sheets.values.return_value.get.return_value.execute.side_effect = [
+        {'values': [['1234.5678']]}, 
+        {'values': [['Existing']]}
+    ]
+
+    # Act: Add "New"
+    result = listener_lambda.update_reaction_in_sheets("1234.5678", "New")
+    
+    # Assert
+    assert result is True
+    mock_sheets.values.return_value.update.assert_called_once()
+    
+    # Check arguments
+    call_args = mock_sheets.values.return_value.update.call_args[1]
+    assert call_args['body']['values'] == [['Existing, New']]
