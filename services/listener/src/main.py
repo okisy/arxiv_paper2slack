@@ -77,6 +77,12 @@ def update_reaction_in_sheets(slack_ts, reaction):
         # Maybe format: "thumbsup(user1), heart(user2)" or just "thumbsup, heart"
         # User requested: "Append the emoji name."
         
+        # Deduplication check
+        current_reactions = [r.strip() for r in current_text.split(',')] if current_text else []
+        if reaction in current_reactions:
+            print(f"Reaction '{reaction}' already exists for row {target_row_index}. Skipping update.")
+            return True
+
         new_text = f"{current_text}, {reaction}" if current_text else reaction
         
         service.spreadsheets().values().update(
