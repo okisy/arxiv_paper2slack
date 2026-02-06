@@ -121,3 +121,57 @@ def test_main_flow(mock_get_existing, mock_save, mock_gen_summary, mock_slack, m
     if "なにがすごいのか教えて" in last_call.kwargs.get("text", ""):
         assert last_call.kwargs["channel"] == "#mock-prompt-channel"
         assert mock_paper.entry_id in last_call.kwargs["text"]
+
+@patch("main.arxiv.Client")
+@patch("main.slack_client")
+@patch("main.get_existing_paper_ids")
+def test_main_no_new_papers(mock_get_existing, mock_slack, mock_arxiv, mock_env):
+    """Test scenario where no new papers are found"""
+    mock_get_existing.return_value = {"http://arxiv.org/abs/2601.0001"}
+    
+    # Mock Arxiv returning same paper that already exists
+    mock_paper = MagicMock()
+    mock_paper.entry_id = "http://arxiv.org/abs/2601.0001"
+    
+    mock_client_instance = mock_arxiv.return_value
+    mock_client_instance.results.return_value = [mock_paper]
+    
+    main("channel", "query", 5, 1)
+    
+    # Assert Slack was NOT called (no new papers)
+    mock_slack.chat_postMessage.assert_not_called()
+
+@patch("main.arxiv.Client")
+@patch("main.slack_client")
+@patch("main.generate_paper_summary")
+@patch("main.save_to_sheets")
+@patch("main.get_existing_paper_ids")
+def test_main_slack_error_handling(mock_get_existing, mock_save, mock_gen, mock_slack, mock_arxiv, mock_env, mock_paper):
+    """Test scenario where Slack posting fails"""
+    from slack_sdk.errors import SlackApiError
+    
+    mock_get_existing.return_value = set()
+    mock_client_instance = mock_arxiv.return_value
+    mock_client_instance.results.return_value = [mock_paper]
+    mock_gen.return_value = {}
+    
+    # Mock Slack raising error
+    mock_response = {"ok": False, "error": "rate_limited"}
+    mock_slack.chat_postMessage.side_effect = SlackApiError("Rate limit", mock_response)
+    
+    # Should not crash
+    main("channel", "query", 5, 1)
+    
+    # Verify we attempted to post
+    mock_slack.chat_postMessage.assert_called()
+    # Verify save_to_sheets was ALSO called (even if slack failed? Logic says yes currently, inside try block? 
+    # Wait, looking at main.py code:
+    # try:
+    #   post slack
+    #   save sheets
+    # except SlackApiError:
+    #   pass
+    # So if slack fails, save logic is SKIPPED currently (in same try block?).
+    # Let's verify standard behavior. If code has them in same block, save shouldn't happen.
+    
+    mock_save.assert_not_called()

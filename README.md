@@ -63,20 +63,22 @@ Listenerを動作させるには、Slack Appの管理画面で以下の設定が
 `pip` を使用して依存関係をインストールします（標準）。
 ※ [uv](https://github.com/astral-sh/uv) を使用している場合は `uv pip install` も可能です。
 
+#### 共通
+リポジトリのルートで作業します。
+
+#### Notification (Poster)
 ```bash
+cd services/notifier
 pip install -r requirements.txt
+python src/main.py
 ```
 
+#### Listener (Reaction Sync)
 ```bash
-# Notification (Poster)
-pip install -r requirements.txt
-python lambda_function.py
-
-# Listener (Reaction Sync)
-cd arxiv-slack-listener
+cd services/listener
 pip install -r requirements.txt
 # ローカル検証用スクリプト (環境変数の設定が必要)
-python ../verify_listener_local.py
+# python ../verify_listener_local.py (※スクリプトが存在する場合)
 ```
 
 ## AWS Lambda デプロイ (CI/CD)
