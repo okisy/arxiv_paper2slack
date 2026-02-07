@@ -287,7 +287,11 @@ def main(slack_channel, query, max_results, num_papers):
 
     # 1. Fetch from arXiv
     print(f"Searching arxiv for: {query}")
-    client = arxiv.Client()
+    client = arxiv.Client(
+        page_size=100,
+        delay_seconds=10.0,
+        num_retries=5
+    )
     search = arxiv.Search(
         query=query,      
         max_results=max_results,  
