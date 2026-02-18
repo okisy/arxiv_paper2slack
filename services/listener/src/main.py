@@ -4,14 +4,23 @@ from slack_sdk.signature import SignatureVerifier
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import emoji
+from typing import Dict, Any, Optional, List, Union
 
 # Env Vars
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET")
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 GOOGLE_CREDS = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
 
-def verify_slack_signature(headers, body):
-    """Verify Slack Request Signature"""
+def verify_slack_signature(headers: Dict[str, str], body: str) -> bool:
+    """Verifies the Slack request signature using the signing secret.
+
+    Args:
+        headers (Dict[str, str]): The HTTP headers from the request.
+        body (str): The raw HTTP request body.
+
+    Returns:
+        bool: True if the signature is valid or secret is missing (unsafe mode), False otherwise.
+    """
     if not SLACK_SIGNING_SECRET:
         print("Warning: SLACK_SIGNING_SECRET not set. Skipping verification (unsafe).")
         return True # For local testing? No, unsafe.
@@ -32,8 +41,16 @@ def verify_slack_signature(headers, body):
         signature=signature
     )
 
-def update_reaction_in_sheets(slack_ts, reaction):
-    """Update Google Sheets for the matching message timestamp"""
+def update_reaction_in_sheets(slack_ts: str, reaction: str) -> bool:
+    """Updates the Google Sheet with the reaction for a specific message.
+
+    Args:
+        slack_ts (str): The timestamp of the Slack message (Column G identifier).
+        reaction (str): The reaction emoji or name to append.
+
+    Returns:
+        bool: True if the update was successful, False otherwise.
+    """
     if not GOOGLE_CREDS or not SPREADSHEET_ID:
         print("Missing Google credentials.")
         return False
@@ -99,7 +116,16 @@ def update_reaction_in_sheets(slack_ts, reaction):
         print(f"Error updating sheet: {e}")
         return False
 
-def lambda_handler(event, context):
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """AWS Lambda entry point for the Listener service.
+
+    Args:
+        event (Dict[str, Any]): The Lambda event payload (API Gateway proxy).
+        context (Any): The Lambda context object.
+
+    Returns:
+        Dict[str, Any]: The API Gateway response object.
+    """
     print(f"Received event: {json.dumps(event)}")
     
     # 1. Parse body and headers
