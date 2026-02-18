@@ -3,6 +3,7 @@ import os
 import random
 import argparse
 import time
+from typing import List, Dict, Any, Set, Tuple
 from datetime import datetime, timezone, timedelta
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
@@ -37,8 +38,12 @@ MAX_RESULTS = config.MAX_RESULTS
 NUM_PAPERS = config.NUM_PAPERS
 
 
-def get_existing_paper_ids():
-    """Google Sheetsから既に送信済みの論文ID(URL)を取得する"""
+def get_existing_paper_ids() -> Set[str]:
+    """Retrieves existing paper IDs (URLs) from Google Sheets to prevent duplicates.
+
+    Returns:
+        Set[str]: A set of paper URLs (entry_ids) already processed.
+    """
     if not GOOGLE_CREDS or not SPREADSHEET_ID:
         print("GOOGLE_CREDS or SPREADSHEET_ID not set. Skipping deduplication check.")
         return set()
@@ -66,8 +71,15 @@ def get_existing_paper_ids():
         return set()
 
 
-def save_to_sheets(paper_data, dify_data, slack_ts, insert_index=0):
-    """Google Sheetsにデータを蓄積 (新しいデータを上に挿入)"""
+def save_to_sheets(paper_data: Any, dify_data: Dict[str, Any], slack_ts: str, insert_index: int = 0) -> None:
+    """Saves paper metadata to Google Sheets. Inserts a new row at the specified index.
+
+    Args:
+        paper_data (Any): The arxiv paper object containing metadata.
+        dify_data (Dict[str, Any]): The AI-generated summary and scoring data.
+        slack_ts (str): The timestamp of the Slack message posting.
+        insert_index (int, optional): The offset index for insertion. Defaults to 0.
+    """
     if not GOOGLE_CREDS or not SPREADSHEET_ID:
         print("GOOGLE_CREDS or SPREADSHEET_ID not set. Skipping sheet save.")
         return
@@ -123,10 +135,16 @@ def save_to_sheets(paper_data, dify_data, slack_ts, insert_index=0):
         print(f"Error saving to sheets: {e}")
 
 
-def generate_paper_summary(paper_title, paper_abstract, model="gpt-5-mini"):
-    """
-    LLMを使用して論文の要約、重要度判定、カテゴリ分類を行う
-    Modular design to allow easy swapping of LLM backend.
+def generate_paper_summary(paper_title: str, paper_abstract: str, model: str = "gpt-5-mini") -> Dict[str, Any]:
+    """Generates a summary and score for a paper using an LLM.
+
+    Args:
+        paper_title (str): Title of the paper.
+        paper_abstract (str): Abstract of the paper.
+        model (str, optional): The LLM model to use. Defaults to "gpt-5-mini".
+
+    Returns:
+        Dict[str, Any]: A dictionary containing 'summary', 'importance', 'theme_id', and 'reason'.
     """
     if not OPENAI_API_KEY:
         print("Error: OPENAI_API_KEY not set.")
@@ -171,9 +189,15 @@ def generate_paper_summary(paper_title, paper_abstract, model="gpt-5-mini"):
         print(f"LLM Error: {e}")
         return _fallback_result(paper_abstract, "LLM Processing Failed")
 
-def _fallback_result(abstract, reason_suffix):
-    """
-    LLM失敗時のフォールバック結果を返す
+def _fallback_result(abstract: str, reason_suffix: str) -> Dict[str, Any]:
+    """Generates a fallback result dictionary when LLM processing fails.
+
+    Args:
+        abstract (str): The original paper abstract.
+        reason_suffix (str): The error reason to append.
+
+    Returns:
+        Dict[str, Any]: A fallback dictionary with truncated abstract.
     """
     return {
         "summary": abstract[:500] + "..." if len(abstract) > 500 else abstract,
@@ -183,8 +207,17 @@ def _fallback_result(abstract, reason_suffix):
     }
 
 
-def build_slack_blocks(paper, ai_data, index):
-    """Slack Block Kitを構築する"""
+def build_slack_blocks(paper: Any, ai_data: Dict[str, Any], index: int) -> Tuple[List[Dict[str, Any]], str]:
+    """Constructs the Slack Block Kit message structure.
+
+    Args:
+        paper (Any): The arxiv paper object.
+        ai_data (Dict[str, Any]): The AI-generated summary and scoring.
+        index (int): The sequence number of the paper in the current batch.
+
+    Returns:
+        Tuple[List[Dict[str, Any]], str]: A tuple containing the blocks list and fallback text.
+    """
     
     theme_id = ai_data.get('theme_id')
     
@@ -281,7 +314,18 @@ def build_slack_blocks(paper, ai_data, index):
 
  
 
-def main(slack_channel, query, max_results, num_papers):        
+def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> None:
+    """Main execution entry point.
+
+    Fetches papers from Arxiv, filters duplicates, generates summaries, posts to Slack,
+    and saves metadata to Google Sheets.
+
+    Args:
+        slack_channel (str): The Slack channel ID or name to post to.
+        query (str): The Arxiv search query.
+        max_results (int): Maximum number of papers to fetch from Arxiv API.
+        num_papers (int): Number of papers to select and post.
+    """        
     # 0. Get existing papers for deduplication
     existing_ids = get_existing_paper_ids()
 
@@ -385,7 +429,16 @@ def main(slack_channel, query, max_results, num_papers):
             print(f"Failed to post Gemini prompt: {e}")
 
 
-def lambda_handler(event, context):
+def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    """AWS Lambda entry point.
+
+    Args:
+        event (Dict[str, Any]): The Lambda event payload.
+        context (Any): The Lambda context object.
+
+    Returns:
+        Dict[str, Any]: The response object containing statusCode and body.
+    """
     main(SLACK_CHANNEL, ARXIV_QUERY, MAX_RESULTS, NUM_PAPERS)
     return {
         'statusCode': 200,
