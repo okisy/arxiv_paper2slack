@@ -100,6 +100,92 @@ graph TD
 └── docs/                # ドキュメント
 ```
 
+## シーケンス図
+
+### 1. 通知フロー (Notifier)
+
+```mermaid
+sequenceDiagram
+    participant EB as EventBridge
+    participant Lambda as Function: Notifier
+    participant Arxiv as Arxiv API
+    participant Sheet as Google Sheets
+    participant OpenAI as OpenAI API
+    participant Slack as Slack API
+
+    EB->>Lambda: Trigger (Schedule)
+    activate Lambda
+    Lambda->>Arxiv: Search Papers (Query)
+    activate Arxiv
+    Arxiv-->>Lambda: List of Papers
+    deactivate Arxiv
+
+    Lambda->>Sheet: Get Existing Paper IDs
+    activate Sheet
+    Sheet-->>Lambda: ID List
+    deactivate Sheet
+
+    loop For each New Paper
+        Lambda->>OpenAI: Abstract Summary & Scoring
+        activate OpenAI
+        OpenAI-->>Lambda: Summary Text
+        deactivate OpenAI
+        
+        Lambda->>Slack: Post Message (Blocks)
+        activate Slack
+        Slack-->>Lambda: Success (ts)
+        deactivate Slack
+
+        Lambda->>Sheet: Save Paper Data (ID, Title, Summary, etc.)
+    end
+    deactivate Lambda
+```
+
+### 2. リアクション同期フロー (Listener)
+
+```mermaid
+sequenceDiagram
+    participant User as Slack User
+    participant Slack as Slack Platform
+    participant Lambda as Function: Listener
+    participant Sheet as Google Sheets
+
+    User->>Slack: Add Reaction (:white_check_mark:)
+    Slack->>Lambda: HTTP POST (event: reaction_added)
+    activate Lambda
+    Lambda->>Lambda: Verify Signature (HMAC)
+    
+    alt Invalid Signature
+        Lambda-->>Slack: 401 Unauthorized
+    else Valid Signature
+        Lambda-->>Slack: 200 OK (Ack)
+        note right of Lambda: Async Processing if heavy
+        
+        Lambda->>Sheet: Search Row by Timestamp (ts)
+        activate Sheet
+        Sheet-->>Lambda: Row Index
+        deactivate Sheet
+        
+        Lambda->>Sheet: Update "Reactions" Column
+    end
+    deactivate Lambda
+```
+
+## データモデル (Google Sheets)
+
+システムはGoogle Sheetsを簡易データベースとして使用します。
+
+| Column | Field Name | Description |
+| :--- | :--- | :--- |
+| **A** | Published Date | 論文の公開日 |
+| **B** | Title | 論文のタイトル |
+| **C** | URL | ArxivのURL (IDとして利用) |
+| **D** | Summary | OpenAIによる要約 |
+| **E** | Author | 筆頭著者 |
+| **F** | Categories | Arxivカテゴリタグ |
+| **G** | Slack TS | Slack投稿時のタイムスタンプ (Listenerの検索キー) |
+| **H** | Reactions | Slackで付与されたリアクション絵文字 |
+
 ## インフラ管理
 *   **現状**: AWSリソースは手動またはCLIで作成済み。
 *   **移行計画**: `infra/` ディレクトリにてAWS CDK (TypeScript) を用いたIaC管理へ移行予定 (参照: Issue #20)。
