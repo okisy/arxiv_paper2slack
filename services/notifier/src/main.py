@@ -3,7 +3,7 @@ import os
 import random
 import argparse
 import time
-from typing import List, Dict, Optional, Any, Set, Tuple
+from typing import List, Dict, Any, Set, Tuple
 from datetime import datetime, timezone, timedelta
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
