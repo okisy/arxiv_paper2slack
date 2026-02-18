@@ -4,7 +4,7 @@ from slack_sdk.signature import SignatureVerifier
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import emoji
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any
 
 # Env Vars
 SLACK_SIGNING_SECRET = os.environ.get("SLACK_SIGNING_SECRET")
