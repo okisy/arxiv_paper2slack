@@ -238,7 +238,7 @@ def build_slack_blocks(paper: Any, ai_data: Dict[str, Any], index: int) -> Tuple
     try:
         imp_val = int(importance)
         star = "⭐️" * imp_val
-    except ValueError:
+    except (ValueError, TypeError):
         star = str(importance)
 
     blocks = [
@@ -406,7 +406,9 @@ def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> N
             print(f"Error posting message: {e}")
             pass
         except Exception as e:
-            print(f"Unexpected error in loop: {e}")
+            import traceback
+            print(f"Unexpected error in loop for paper {paper.title}: {e}")
+            traceback.print_exc()
             pass
 
     print(f"Finished. Sent {papers_sent}/{num_papers} papers.")
