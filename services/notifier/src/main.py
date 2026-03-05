@@ -344,8 +344,21 @@ def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> N
     )
     
     all_results = []
-    for result in client.results(search):
-        all_results.append(result)
+    try:
+        for result in client.results(search):
+            all_results.append(result)
+    except Exception as e:
+        error_msg = f"⚠️ arXiv APIからの論文取得中にエラーが発生しました。取得処理全体をスキップします。\n詳細: `{e}`"
+        print(error_msg)
+        if slack_client and slack_channel:
+            try:
+                slack_client.chat_postMessage(
+                    channel=slack_channel,
+                    text=error_msg
+                )
+            except Exception as slack_e:
+                print(f"Failed to post error to Slack: {slack_e}")
+        return
     
     print(f"Found {len(all_results)} papers total.")
 
