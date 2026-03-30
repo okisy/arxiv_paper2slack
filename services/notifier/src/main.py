@@ -3,15 +3,16 @@ import os
 import random
 import argparse
 import time
+import re
 from typing import List, Dict, Any, Set, Tuple
 from datetime import datetime, timezone, timedelta
+from dataclasses import dataclass
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-import arxiv
+import feedparser
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import openai
-
 # config.py から設定をインポート
 import config
 
@@ -36,6 +37,39 @@ SLACK_CHANNEL = config.SLACK_CHANNEL
 ARXIV_QUERY = config.ARXIV_QUERY
 MAX_RESULTS = config.MAX_RESULTS
 NUM_PAPERS = config.NUM_PAPERS
+
+
+@dataclass
+class Paper:
+    title: str
+    summary: str
+    entry_id: str
+    published: datetime
+
+
+def extract_phrases(query_string: str) -> List[str]:
+    """Extract terms enclosed in double quotes or separated by OR from config."""
+    if not query_string:
+        return []
+    if '"' in query_string:
+        return re.findall(r'"([^"]+)"', query_string)
+    else:
+        return [p.strip() for p in query_string.split(' OR ') if p.strip()]
+
+
+def matches_query(text: str, config_ai: str, config_domain: str) -> bool:
+    """Check if the text matches at least one AI keyword AND at least one Domain keyword."""
+    if not text:
+        return False
+    text_lower = text.lower()
+    
+    ai_phrases = extract_phrases(config_ai)
+    domain_phrases = extract_phrases(config_domain)
+    
+    match_ai = any(p.lower() in text_lower for p in ai_phrases) if ai_phrases else True
+    match_domain = any(p.lower() in text_lower for p in domain_phrases) if domain_phrases else True
+    
+    return match_ai and match_domain
 
 
 def get_existing_paper_ids() -> Set[str]:
@@ -329,26 +363,61 @@ def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> N
     # 0. Get existing papers for deduplication
     existing_ids = get_existing_paper_ids()
 
-    # 1. Fetch from arXiv
-    print(f"Searching arxiv for: {query}")
-    client = arxiv.Client(
-        page_size=100,
-        delay_seconds=10.0,
-        num_retries=5
-    )
-    search = arxiv.Search(
-        query=query,      
-        max_results=max_results,  
-        sort_by=arxiv.SortCriterion.SubmittedDate,  
-        sort_order=arxiv.SortOrder.Descending,  
-    )
+    # 1. Fetch from arXiv RSS Feeds
+    print("Fetching papers from arXiv RSS feeds...")
+    rss_feeds = [
+        'http://export.arxiv.org/rss/cs',
+        'http://export.arxiv.org/rss/eess',
+        'http://export.arxiv.org/rss/stat',
+        'http://export.arxiv.org/rss/math'
+    ]
     
     all_results = []
+    seen_urls = set()
+    
     try:
-        for result in client.results(search):
-            all_results.append(result)
+        # User-Agent is required to bypass arXiv's basic crawler blocking
+        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        import requests
+        
+        for feed_url in rss_feeds:
+            response = requests.get(feed_url, headers=headers, timeout=20)
+            if response.status_code != 200:
+                print(f"Warning: Non-200 status code from {feed_url}")
+                continue
+                
+            feed = feedparser.parse(response.content)
+            for entry in feed.entries:
+                title = entry.get('title', '')
+                title_clean = re.sub(r'<[^>]+>', '', title)
+                
+                summary = entry.get('summary', '')
+                summary_clean = re.sub(r'<[^>]+>', '', summary)
+                
+                # Check keywords using the standalone config variables
+                if matches_query(title_clean + " " + summary_clean, config.keywords_ai, config.keywords_domain):
+                    entry_id = entry.get('link', '')
+                    if entry_id in seen_urls:
+                        continue
+                        
+                    seen_urls.add(entry_id)
+                    
+                    published_parsed = entry.get('published_parsed') or entry.get('updated_parsed')
+                    if published_parsed:
+                        published_dt = datetime.fromtimestamp(time.mktime(published_parsed), tz=timezone.utc)
+                    else:
+                        published_dt = datetime.now(timezone.utc)
+                    
+                    paper = Paper(
+                        title=title_clean.replace('\n', ' '),
+                        summary=summary_clean.replace('\n', ' '),
+                        entry_id=entry_id,
+                        published=published_dt
+                    )
+                    all_results.append(paper)
+                    
     except Exception as e:
-        error_msg = f"⚠️ arXiv APIからの論文取得中にエラーが発生しました。取得処理全体をスキップします。\n詳細: `{e}`"
+        error_msg = f"⚠️ arXiv RSSからの論文取得中にエラーが発生しました。取得処理全体をスキップします。\n詳細: `{e}`"
         print(error_msg)
         if slack_client and slack_channel:
             try:
