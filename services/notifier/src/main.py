@@ -16,6 +16,7 @@ import openai
 import logging
 import ssl
 import certifi
+import requests
 
 # config.py から設定をインポート
 import config
@@ -390,7 +391,6 @@ def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> N
     
     # User-Agent is required to bypass arXiv's basic crawler blocking
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-    import requests
     
     for feed_url in rss_feeds:
         try:
