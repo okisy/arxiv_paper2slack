@@ -14,6 +14,11 @@ from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import openai
 import logging
+import ssl
+import certifi
+
+# config.py から設定をインポート
+import config
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -22,18 +27,12 @@ if not logger.handlers:
     ch.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
     logger.addHandler(ch)
 
-# config.py から設定をインポート
-import config
-
 # 環境変数
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
 # サービスアカウントのJSON
 GOOGLE_CREDS = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
 # OpenAI Key
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-
-import ssl
-import certifi
 
 # Slackのトークンを環境変数から取得
 slack_token = os.environ.get("SLACK_API_TOKEN")
