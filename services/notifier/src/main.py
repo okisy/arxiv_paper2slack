@@ -3,17 +3,30 @@ import os
 import random
 import argparse
 import time
+import re
 from typing import List, Dict, Any, Set, Tuple
 from datetime import datetime, timezone, timedelta
+from dataclasses import dataclass
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
-import arxiv
+import feedparser
 from googleapiclient.discovery import build
 from google.oauth2 import service_account
 import openai
+import logging
+import ssl
+import certifi
+import requests
 
 # config.py から設定をインポート
 import config
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    ch = logging.StreamHandler()
+    ch.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(ch)
 
 # 環境変数
 SPREADSHEET_ID = os.environ.get("SPREADSHEET_ID")
@@ -25,9 +38,10 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 # Slackのトークンを環境変数から取得
 slack_token = os.environ.get("SLACK_API_TOKEN")
 
-# Slackクライアントの初期化
+# Slackクライアントの初期化 (macOSの証明書エラー対策としてcertifiを利用)
 if slack_token:
-    slack_client = WebClient(token=slack_token)
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+    slack_client = WebClient(token=slack_token, ssl=ssl_context)
 else:
     slack_client = None
 
@@ -36,6 +50,39 @@ SLACK_CHANNEL = config.SLACK_CHANNEL
 ARXIV_QUERY = config.ARXIV_QUERY
 MAX_RESULTS = config.MAX_RESULTS
 NUM_PAPERS = config.NUM_PAPERS
+
+
+@dataclass
+class Paper:
+    title: str
+    summary: str
+    entry_id: str
+    published: datetime
+
+
+def extract_phrases(query_string: str) -> List[str]:
+    """Extract terms enclosed in double quotes or separated by OR from config."""
+    if not query_string:
+        return []
+    if '"' in query_string:
+        return re.findall(r'"([^"]+)"', query_string)
+    else:
+        return [p.strip() for p in query_string.split(' OR ') if p.strip()]
+
+
+def matches_query(text: str, config_ai: str, config_domain: str) -> bool:
+    """Check if the text matches at least one AI keyword AND at least one Domain keyword."""
+    if not text:
+        return False
+    text_lower = text.lower()
+    
+    ai_phrases = extract_phrases(config_ai)
+    domain_phrases = extract_phrases(config_domain)
+    
+    match_ai = any(p.lower() in text_lower for p in ai_phrases) if ai_phrases else True
+    match_domain = any(p.lower() in text_lower for p in domain_phrases) if domain_phrases else True
+    
+    return match_ai and match_domain
 
 
 def get_existing_paper_ids() -> Set[str]:
@@ -81,7 +128,7 @@ def save_to_sheets(paper_data: Any, dify_data: Dict[str, Any], slack_ts: str, in
         insert_index (int, optional): The offset index for insertion. Defaults to 0.
     """
     if not GOOGLE_CREDS or not SPREADSHEET_ID:
-        print("GOOGLE_CREDS or SPREADSHEET_ID not set. Skipping sheet save.")
+        logger.warning("GOOGLE_CREDS or SPREADSHEET_ID not set. Skipping sheet save.")
         return
 
     try:
@@ -130,9 +177,9 @@ def save_to_sheets(paper_data: Any, dify_data: Dict[str, Any], slack_ts: str, in
             body={'values': [values]}
         ).execute()
         
-        print(f"Saved to sheets at row {row_number}: {paper_data.title}")
+        logger.info(f"Saved to sheets at row {row_number}: {paper_data.title}")
     except Exception as e:
-        print(f"Error saving to sheets: {e}")
+        logger.error(f"Failed to write to Spreadsheet: {e}")
 
 
 def generate_paper_summary(paper_title: str, paper_abstract: str, model: str = "gpt-5-mini") -> Dict[str, Any]:
@@ -329,45 +376,93 @@ def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> N
     # 0. Get existing papers for deduplication
     existing_ids = get_existing_paper_ids()
 
-    # 1. Fetch from arXiv
-    print(f"Searching arxiv for: {query}")
-    client = arxiv.Client(
-        page_size=100,
-        delay_seconds=10.0,
-        num_retries=5
-    )
-    search = arxiv.Search(
-        query=query,      
-        max_results=max_results,  
-        sort_by=arxiv.SortCriterion.SubmittedDate,  
-        sort_order=arxiv.SortOrder.Descending,  
-    )
+    # 1. Fetch from arXiv RSS Feeds
+    logger.info("Fetching papers from arXiv RSS feeds...")
+    rss_feeds = [
+        'http://export.arxiv.org/rss/cs',
+        'http://export.arxiv.org/rss/eess',
+        'http://export.arxiv.org/rss/stat',
+        'http://export.arxiv.org/rss/math'
+    ]
     
     all_results = []
-    try:
-        for result in client.results(search):
-            all_results.append(result)
-    except Exception as e:
-        error_msg = f"⚠️ arXiv APIからの論文取得中にエラーが発生しました。取得処理全体をスキップします。\n詳細: `{e}`"
-        print(error_msg)
+    seen_urls = set()
+    failed_feeds = 0
+    
+    # User-Agent is required to bypass arXiv's basic crawler blocking
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    
+    for feed_url in rss_feeds:
+        try:
+            logger.info(f"Requesting RSS feed: {feed_url}")
+            response = requests.get(feed_url, headers=headers, timeout=20)
+            if response.status_code != 200:
+                logger.warning(f"Non-200 status code from {feed_url}: {response.status_code}")
+                failed_feeds += 1
+                continue
+                
+            feed = feedparser.parse(response.content)
+            if getattr(feed, 'bozo', False):
+                logger.warning(f"Bozo exception parsing {feed_url} (malformed XML?): {feed.bozo_exception}")
+            
+            feed_matches = 0
+            for entry in feed.entries:
+                title = entry.get('title', '')
+                title_clean = re.sub(r'<[^>]+>', '', title)
+                
+                summary = entry.get('summary', '')
+                summary_clean = re.sub(r'<[^>]+>', '', summary)
+                
+                # Check keywords using the standalone config variables
+                if matches_query(title_clean + " " + summary_clean, config.keywords_ai, config.keywords_domain):
+                    entry_id = entry.get('link', '')
+                    if entry_id in seen_urls:
+                        continue
+                        
+                    seen_urls.add(entry_id)
+                    feed_matches += 1
+                    
+                    published_parsed = entry.get('published_parsed') or entry.get('updated_parsed')
+                    if published_parsed:
+                        published_dt = datetime.fromtimestamp(time.mktime(published_parsed), tz=timezone.utc)
+                    else:
+                        published_dt = datetime.now(timezone.utc)
+                    
+                    paper = Paper(
+                        title=title_clean.replace('\\n', ' '),
+                        summary=summary_clean.replace('\\n', ' '),
+                        entry_id=entry_id,
+                        published=published_dt
+                    )
+                    all_results.append(paper)
+                    
+            logger.info(f"Extracted {feed_matches} matching papers from {feed_url} (out of {len(feed.entries)} total entries).")
+            
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout while fetching {feed_url}")
+            failed_feeds += 1
+        except Exception as e:
+            logger.exception(f"Unexpected error processing {feed_url}: {e}")
+            failed_feeds += 1
+            
+    if failed_feeds == len(rss_feeds):
+        error_msg = "⚠️ arXiv RSSからの論文取得中に全フィードでエラーが発生しました。取得処理全体をスキップします。"
+        logger.error(error_msg)
         if slack_client and slack_channel:
             try:
-                slack_client.chat_postMessage(
-                    channel=slack_channel,
-                    text=error_msg
-                )
+                slack_client.chat_postMessage(channel=slack_channel, text=error_msg)
             except Exception as slack_e:
-                print(f"Failed to post error to Slack: {slack_e}")
+                logger.error(f"Failed to post error to Slack: {slack_e}")
         return
     
-    print(f"Found {len(all_results)} papers total.")
+    logger.info(f"Found {len(all_results)} papers total matching local extraction logic.")
 
     # 2. Filter Duplicates
     new_papers = [p for p in all_results if p.entry_id not in existing_ids]
-    print(f"Found {len(new_papers)} new papers after deduplication.")
+    logger.info(f"Found {len(new_papers)} new papers after deduplication.")
 
     if not new_papers:
-        print("No new papers to send.")
+        logger.info("No new papers to send.")
         return
 
     # 3. Random Shuffle for selection
@@ -385,13 +480,16 @@ def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> N
         paper_index += 1
         
         try:
-            print(f"Processing paper {papers_sent+1}/{num_papers} (Candidate {paper_index}): {paper.title}...")
+            logger.info(f"Processing paper {papers_sent+1}/{num_papers} (Candidate {paper_index}): {paper.title}...")
             
             # AI Inference (with fallback safety)
             ai_data = generate_paper_summary(paper.title, paper.summary)
             
             # Build Slack Blocks
             blocks, fallback_text = build_slack_blocks(paper, ai_data, papers_sent+1)
+            
+            # デバッグやLambdaのログ用にテキストとして出力しておく
+            logger.info(f"\n--- [Generated Slack Post] {paper.title} ---\n{fallback_text}\n------------------------------------------\n")
             
             slack_ts = ""
             if slack_client:
@@ -401,11 +499,10 @@ def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> N
                     blocks=blocks
                 )
                 slack_ts = response['ts']
-                print(f"Message posted: {slack_ts}")
+                logger.info(f"Message posted: {slack_ts}")
                 sent_paper_urls.append(paper.entry_id) # Track for prompt
             else:
-                print("Slack client not initialized, skipping post (would have posted).")
-                pass
+                logger.info("Slack client not initialized, skipping post (would have posted).")
 
             # Save to sheets
             save_to_sheets(paper, ai_data, slack_ts, insert_index=papers_sent)
@@ -416,21 +513,17 @@ def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> N
             time.sleep(2)
 
         except SlackApiError as e:
-            print(f"Error posting message: {e}")
-            pass
+            logger.error(f"Slack API Error posting message: {e}")
         except Exception as e:
-            import traceback
-            print(f"Unexpected error in loop for paper {paper.title}: {e}")
-            traceback.print_exc()
-            pass
+            logger.exception(f"Unexpected error in loop for paper {paper.title}: {e}")
 
-    print(f"Finished. Sent {papers_sent}/{num_papers} papers.")
+    logger.info(f"Finished. Sent {papers_sent}/{num_papers} papers.")
 
     # 5. Post Gemini Prompt Bundle
     prompt_channel = config.SLACK_PROMPT_CHANNEL
     if sent_paper_urls and prompt_channel and slack_client:
         try:
-            print(f"Posting Gemini prompt to {prompt_channel}")
+            logger.info(f"Posting Gemini prompt to {prompt_channel}")
             
             urls_block = "\n".join(sent_paper_urls)
             prompt_text = f"{urls_block}\nこれらの論文についてなにがすごいのか教えて"
@@ -439,9 +532,9 @@ def main(slack_channel: str, query: str, max_results: int, num_papers: int) -> N
                 channel=prompt_channel,
                 text=prompt_text
             )
-            print("Gemini prompt posted.")
+            logger.info("Gemini prompt posted.")
         except Exception as e:
-            print(f"Failed to post Gemini prompt: {e}")
+            logger.error(f"Failed to post Gemini prompt: {e}")
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
